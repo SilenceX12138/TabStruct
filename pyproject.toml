@@ -1,0 +1,35 @@
+[build-system]
+build-backend = "hatchling.build"
+requires = ["hatchling"]
+
+[project]
+authors = [
+  {name = "Xiangjian Jiang", email = "silencejiang12138@gmail.com"},
+]
+classifiers = [
+  "License :: OSI Approved :: Apache Software License",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+]
+description = "A Python project framework for managing dual-repository workflows with automated release management and development tools"
+keywords = ["framework", "template", "repository", "automation", "development"]
+license = {file = "LICENSE"}
+name = "tabstruct"
+readme = "README.md"
+requires-python = ">=3.10"
+version = "2025.07.23"
+
+dependencies = [
+  "pytest",
+  "flake8",
+  "pylint",
+  "setuptools==75.1.0",
+  "sphinx",
+  "myst-parser",
+  "sphinx-rtd-theme",
+  "sphinx-book-theme",
+  "ipykernel",
+]
+
+[project.optional-dependencies]
+dev = []

@@ -1,0 +1,13 @@
+# TabStruct
+
+include README.md
+include LICENSE
+include pyproject.toml
+recursive-include src *.py
+recursive-include docs *.rst *.md *.py
+recursive-include tests *.py
+global-exclude *.pyc
+global-exclude __pycache__
+global-exclude .DS_Store
+global-exclude *.so
+prune docs/wiki/_build
