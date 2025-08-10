@@ -41,7 +41,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          uv pip install --system -r pyproject.toml
+          uv pip install --system pytest flake8 pylint setuptools==75.1.0 sphinx myst-parser sphinx-rtd-theme sphinx-book-theme ipykernel
 
       - name: Build documentation
         run: |
