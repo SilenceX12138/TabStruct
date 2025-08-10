@@ -8,9 +8,6 @@ on:
 jobs:
   code-style-check:
     runs-on: ubuntu-latest
-    env:
-      IGNORE_PATHS_PYLINT: ""
-      IGNORE_PATHS_FLAKE8: ""
 
     steps:
       - name: Checkout code
@@ -35,7 +32,7 @@ jobs:
       - name: Install dependencies
         run: |
           # Install main package dependencies
-          uv pip install --system -r pyproject.toml
+          uv pip install --system pytest flake8 pylint setuptools==75.1.0 sphinx myst-parser sphinx-rtd-theme sphinx-book-theme ipykernel
 
       - name: Run style checks
         run: |

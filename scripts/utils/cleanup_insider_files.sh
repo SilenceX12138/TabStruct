@@ -10,6 +10,7 @@ echo -e "${BLUE}Removing insider files...${NC}"
 # Remove any file in .github/workflows/ that does not end with .yaml
 echo -e "${YELLOW}Cleaning .github/workflows/ directory...${NC}"
 find .github/workflows/ -type f ! -name "*.yaml" -exec git rm --cached -r {} \;
+git rm --cached -r .github/workflows/regression_test.yaml
 
 # Remove VSCode configuration
 echo -e "${YELLOW}Removing .vscode directory...${NC}"
@@ -19,10 +20,15 @@ git rm --cached -r .vscode
 echo -e "${YELLOW}Removing scripts directory...${NC}"
 git rm --cached -r scripts/dev
 git rm --cached -r scripts/doc
+git rm --cached -r scripts/exp
 
 # Remove Makefile
 echo -e "${YELLOW}Removing Makefile...${NC}"
 git rm --cached -r Makefile
+
+# Remove regression test files
+echo -e "${YELLOW}Removing regression test files...${NC}"
+git rm --cached -r tests/
 
 # Add more files/directories to remove below as needed
 # Example:

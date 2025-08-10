@@ -4,8 +4,8 @@
 set -e # Exit on any error
 
 # Environment variables (can be overridden)
-IGNORE_PATHS_PYLINT=""
-IGNORE_PATHS_FLAKE8=""
+IGNORE_PATHS_PYLINT="src/generation/models/custom/tabsyn/official/,src/generation/models/custom/tabdiff/official/"
+IGNORE_PATHS_FLAKE8="src/generation/models/custom/tabsyn/official/,src/generation/models/custom/tabdiff/official/"
 
 echo "=== Python Code Style Check ==="
 echo "Starting style check for Python code..."

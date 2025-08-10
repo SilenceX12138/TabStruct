@@ -17,9 +17,10 @@ license = {file = "LICENSE"}
 name = "tabstruct"
 readme = "README.md"
 requires-python = ">=3.10"
-version = "2025.07.23"
+version = "2025.08.07"
 
 dependencies = [
+  "hatchling",
   "pytest",
   "flake8",
   "pylint",
@@ -29,7 +30,34 @@ dependencies = [
   "sphinx-rtd-theme",
   "sphinx-book-theme",
   "ipykernel",
+  "build",
+  "lightning==2.5.2",
+  "lightning-utilities==0.14.3",
+  "wrapt_timeout_decorator",
+  "bnlearn",
+  "causal-learn",
+  "autogluon",
+  "httplib2",
+  "ucimlrepo",
+  "thop",
+  "sdmetrics",
+  "wandb==0.18.7",
+  "mostlyai-qa",
+  "cleanlab",
+  "nbconvert",
+  "seaborn",
+  "pgmpy==1.0.0",
+  "rtdl_revisiting_models",
+  "tabpfn",
+  "tabcamel==2025.8.10",
+  "tabeval[all]==2025.8.10",
+  "rich==13.9.4",
 ]
 
 [project.optional-dependencies]
 dev = []
+
+[tool.pytest.ini_options]
+pythonpath = [
+  ".",
+]
