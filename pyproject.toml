@@ -11,28 +11,28 @@ classifiers = [
   "Programming Language :: Python :: 3",
   "Programming Language :: Python :: 3.10",
 ]
-description = "A Python project framework for managing dual-repository workflows with automated release management and development tools"
-keywords = ["framework", "template", "repository", "automation", "development"]
+description = "TabStruct is a comprehensive benchmark suite for tabular data generation, prediction, and evaluation."
+keywords = ["tabular data", "synthetic data", "data generation", "causal structures", "machine learning"]
 license = {file = "LICENSE"}
 name = "tabstruct"
 readme = "README.md"
 requires-python = ">=3.10"
-version = "2025.08.07"
+version = "2026.03.04"
 
 dependencies = [
   "hatchling",
   "pytest",
   "flake8",
   "pylint",
-  "setuptools==75.1.0",
+  "setuptools",
   "sphinx",
   "myst-parser",
   "sphinx-rtd-theme",
   "sphinx-book-theme",
   "ipykernel",
   "build",
-  "lightning==2.5.2",
-  "lightning-utilities==0.14.3",
+  "lightning",
+  "lightning-utilities",
   "wrapt_timeout_decorator",
   "bnlearn",
   "causal-learn",
@@ -41,17 +41,19 @@ dependencies = [
   "ucimlrepo",
   "thop",
   "sdmetrics",
-  "wandb==0.18.7",
+  "wandb",
   "mostlyai-qa",
   "cleanlab",
   "nbconvert",
   "seaborn",
-  "pgmpy==1.0.0",
   "rtdl_revisiting_models",
   "tabpfn",
-  "tabcamel==2025.8.10",
-  "tabeval[all]==2025.8.10",
-  "rich==13.9.4",
+  "rich",
+  "tabebm",
+  "kaleido",
+  "pymupdf",
+  "tabcamel",
+  "tabeval[all]",
 ]
 
 [project.optional-dependencies]

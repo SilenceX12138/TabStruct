@@ -35,7 +35,7 @@ Evaluate a saved checkpoint
      --tags dev
 
 Generate and evaluate synthetic data
------------------------------------
+------------------------------------
 
 .. code-block:: bash
 

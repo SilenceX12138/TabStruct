@@ -88,11 +88,11 @@ Base class for all data generation models.
 **Inheritance Hierarchy:**
 
 * ``BaseGenerator``
-  * ``BaseImblearnGenerator`` → SMOTE
-  * ``BaseTabEvalGenerator`` → TabEval-based generators
-    * ``BaseTabEvalConditionalGenerator`` → ctgan, tvae, tabddpm
-    * ``BaseTabEvalJointGenerator`` → bn, arf, nflow, goggle, great
-  * ``BaseMixedGenerator`` → Custom generators (TabSyn, TabDiff, TabEBM)
+* ``BaseImblearnGenerator`` → SMOTE
+* ``BaseTabEvalGenerator`` → TabEval-based generators
+* ``BaseTabEvalConditionalGenerator`` → ctgan, tvae, tabddpm
+* ``BaseTabEvalJointGenerator`` → bn, arf, nflow, goggle, great
+* ``BaseMixedGenerator`` → Custom generators (TabSyn, TabDiff, TabEBM)
 
 **Available Generation Models:**
 
