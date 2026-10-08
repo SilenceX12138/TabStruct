@@ -1,182 +1,155 @@
-TabStruct - Tabular Structural Fidelity
-=======================================================
+.. _tabstruct-tabular-structural-fidelity:
 
-.. |arxiv| image:: https://img.shields.io/badge/Arxiv-Paper-olivegreen?style=for-the-badge
-   :target: https://arxiv.org/abs/2509.11950
+.. _overview:
 
-.. |ci| image:: https://img.shields.io/github/actions/workflow/status/SilenceX12138/TabStruct/style_check.yaml?branch=master&style=for-the-badge
-   :target: https://github.com/SilenceX12138/TabStruct/actions/workflows/style_check.yaml?branch=master
+TabStruct Documentation
+=======================
 
-.. |pypi| image:: https://img.shields.io/pypi/v/tabstruct?style=for-the-badge
-   :target: https://badge.fury.io/py/tabstruct
+.. raw:: html
 
-.. |downloads| image:: https://img.shields.io/pepy/dt/tabstruct?style=for-the-badge
-   :target: https://pypi.org/project/tabstruct/
+   <section class="home-banner" aria-labelledby="home-title">
+     <div class="banner-title">
+       <h1 id="home-title"><span class="brand-tab">Tab</span><span class="brand-struct">Struct</span></h1>
+       <p class="hero-subtitle">Structural Fidelity of Tabular Data</p>
+       <h2>A shared benchmark for tabular generation and evaluation</h2>
+       <p class="hero-description">Measure synthetic tables across <strong>density estimation</strong>, <strong>privacy preservation</strong>, <strong>ML efficacy</strong>, and <strong>structural fidelity</strong>.</p>
+       <nav class="home-actions" aria-label="Documentation shortcuts">
+         <a class="doc-button primary" href="guide/quickstart.html">Get started <span aria-hidden="true">→</span></a>
+         <a class="doc-button secondary" href="https://arxiv.org/abs/2509.11950">ICLR 2026 Oral</a>
+         <a class="doc-button secondary" href="https://github.com/SilenceX12138/TabStruct">Codebase</a>
+       </nav>
+     </div>
+     <figure class="workflow-figure" id="id1">
+       <a class="workflow-viewport" href="_static/workflow.svg" aria-label="Open the TabStruct workflow at full size">
+         <img src="_static/workflow.svg" alt="Prepare data with TabCamel, then generate or predict; evaluate synthetic data with TabEval and measure ML efficacy through synthetic-training prediction." width="1100" height="410">
+       </a>
+       <figcaption><a href="https://github.com/SilenceX12138/TabCamel">TabCamel</a> prepares the data; <a href="https://github.com/SilenceX12138/TabEval">TabEval</a> supplies synthetic-data evaluators.</figcaption>
+     </figure>
+   </section>
 
-.. |license| image:: https://img.shields.io/badge/License-Apache%202.0-blue.svg?style=for-the-badge
-   :target: https://opensource.org/licenses/Apache-2.0
+.. _key-features:
 
-.. image:: _media/repo_logo_landscape.png
-   :alt: TabStruct logo
-   :width: 60%
-   :align: center
+.. _data-generation:
 
-|arxiv| |ci| |pypi| |downloads| |license|
+.. _evaluation-dimensions:
 
-.. important::
+.. _predictive-tasks:
 
-   Official code for the paper "TabStruct: Measuring Structural Fidelity of Tabular Data" (https://arxiv.org/abs/2509.11950),
-   published in The Fourteenth International Conference on Learning Representations (ICLR 2026 Oral).
+.. _example-workflows:
 
-   Authored by Xiangjian Jiang, Nikola Simidjievski, and Mateja Jamnik, University of Cambridge, UK.
+.. _generate-synthetic-data:
 
-Overview
---------
+.. _evaluate-synthetic-data:
 
-**TabStruct** is an end-to-end benchmark for **tabular data generation, prediction, and evaluation**.
-It ships with ready-to-use pipelines for:
+.. _predict-on-tabular-data:
 
-* generating high-quality synthetic tables
-* training predictive models
-* analysing results with a rich suite of metrics, especially those that quantify **structural fidelity**
-
-All components are designed to plug-and-play, so you can mix, match, and extend them to suit your own workflow.
-
-Key Features
-------------
-
-Data generation
-~~~~~~~~~~~~~~~
-
-* Out-of-the-box support for popular tabular generators: **SMOTE, TVAE, CTGAN, NFlow, TabDDPM, ARF**, and more.
-
-Evaluation dimensions
-~~~~~~~~~~~~~~~~~~~~~
-
-* **Density estimation** - How well does the synthetic data approximate the real distribution?
-* **Privacy preservation** - Does the generator leak sensitive records?
-* **ML efficacy** - How do models trained on synthetic data perform compared to real data?
-* **Structural fidelity** - Does the generator respect the causal structures of real data?
-
-Predictive tasks
-~~~~~~~~~~~~~~~~
-
-* Classification and regression pipelines built on **scikit-learn**, with optional neural-network backbones.
-
-Installation
-------------
-
-We recommend managing dependencies with **conda** + **mamba**.
-
-.. code-block:: bash
-
-   # 1. Upgrade conda and activate the base env
-   conda update -n base -c conda-forge conda
-   conda activate base
-
-   # 2. Install the high-performance dependency resolver
-   conda install conda-libmamba-solver --yes
-   conda config --set solver libmamba
-   conda install -c conda-forge mamba --yes
-
-   # 3. Create a new conda env
-   conda create --name tabstruct python=3.10.18 --no-default-packages
-   conda activate tabstruct
-
-   # 4. Set up the env
-   bash scripts/utils/install.sh
-
-Logging with W&B
-----------------
-
-TabStruct logs every experiment to **Weights & Biases** (W&B).
-Use the default project or set your own credentials in ``src/tabstruct/common/__init__.py``:
-
-.. code-block:: python
-
-   WANDB_ENTITY  = "tabular-data-generation"
-   WANDB_PROJECT = "TabStruct"
-
-Quick sanity check
-------------------
-
-Run a toy classification job (K-NN on the Adult dataset):
-
-.. code-block:: bash
-
-   python -m src.tabstruct.experiment.run_experiment \
-     --model knn \
-     --save_model \
-     --dataset adult \
-     --test_size 0.2 \
-     --valid_size 0.1 \
-     --tags ENV-TEST
-
-A successful run prints a series of green log lines like:
-
-.. code-block:: text
-
-   [YYYY-MM-DD] Codebase: >>>>>>>>>> Launching create_data_module() <<<<<<<<<<<
-   ...
-
-If you see those, your environment is ready.
-
-Example Workflows
+Choose a workflow
 -----------------
 
-1. Generate synthetic data
-~~~~~~~~~~~~~~~~~~~~~~~~~~
+.. raw:: html
+
+   <div class="task-grid" aria-label="TabStruct workflows">
+     <section class="task-card">
+       <div class="task-card-body">
+         <h3>Generate a table</h3>
+         <p>Create synthetic tables with the original feature and target schema.</p>
+         <p class="task-scenario">Compare generators for a research data-sharing workflow.</p>
+         <a class="task-api" href="reference/api.html#basegenerator">Generator API <span aria-hidden="true">↗</span></a>
+       </div>
+       <a class="task-art" href="guide/tutorials.html#generate-and-evaluate-a-table" aria-label="Open the generation tutorial">
+         <img src="_static/generation.svg" alt="An input table becomes a synthetic table" width="240" height="120">
+       </a>
+       <a class="task-examples" href="guide/tutorials.html#generate-and-evaluate-a-table">Generation tutorial <span aria-hidden="true">→</span></a>
+     </section>
+     <section class="task-card">
+       <div class="task-card-body">
+         <h3>Evaluate synthetic data</h3>
+         <p>Assess density, privacy, ML efficacy, and structural fidelity.</p>
+         <p class="task-scenario">Check whether a synthetic table retains relationships across columns.</p>
+         <a class="task-api" href="guide/evaluation.html">TabEval integration <span aria-hidden="true">↗</span></a>
+       </div>
+       <a class="task-art" href="guide/evaluation.html" aria-label="Open the four evaluation dimensions">
+         <img src="_static/evaluation.svg" alt="Four complementary evaluation dimensions" width="240" height="120">
+       </a>
+       <a class="task-examples" href="guide/evaluation.html">Evaluation guide <span aria-hidden="true">→</span></a>
+     </section>
+     <section class="task-card">
+       <div class="task-card-body">
+         <h3>Benchmark a predictor</h3>
+         <p>Train classifiers or regressors and compare held-out performance.</p>
+         <p class="task-scenario">Establish a credit classification baseline and restore its checkpoint.</p>
+         <a class="task-api" href="reference/api.html#basepredictor">Predictor API <span aria-hidden="true">↗</span></a>
+       </div>
+       <a class="task-art" href="guide/tutorials.html#predict-and-restore" aria-label="Open the prediction tutorial">
+         <img src="_static/prediction.svg" alt="Tabular features map to target predictions" width="240" height="120">
+       </a>
+       <a class="task-examples" href="guide/tutorials.html#predict-and-restore">Prediction tutorial <span aria-hidden="true">→</span></a>
+     </section>
+   </div>
+
+.. _installation:
+
+.. _logging-with-w-b:
+
+.. _quick-sanity-check:
+
+First run
+---------
+
+After :doc:`installation and W&B setup <guide/quickstart>`, run from the
+repository root:
 
 .. code-block:: bash
 
    python -m src.tabstruct.experiment.run_experiment \
-       --pipeline "generation" \
-       --generation_only \
-       --model "smote" \
-       --dataset "mfeat-fourier" \
-       --test_size 0.2 \
-       --valid_size 0.1 \
-       --tags "dev"
+     --pipeline prediction \
+     --task classification \
+     --model lr \
+     --dataset credit-g \
+     --device cpu \
+     --save_model \
+     --tags tutorial-prediction
 
-Template script: ``docs/tutorial/example_scripts/generation/train.sh``.
+The runner returns split-specific metrics and records ``best_model_path``
+when saving a model. Continue with the :doc:`tutorials <guide/tutorials>` or
+browse the :doc:`model registry <reference/models>`.
 
-2. Evaluate synthetic data
-~~~~~~~~~~~~~~~~~~~~~~~~~~
+.. _contents:
 
-.. code-block:: bash
+.. toctree::
+   :maxdepth: 2
+   :hidden:
+   :caption: Learn
 
-   python -m src.tabstruct.experiment.run_experiment \
-       --pipeline "generation" \
-       --model "smote" \
-       --eval_only \
-       --dataset "mfeat-fourier" \
-       --test_size 0.2 \
-       --valid_size 0.1 \
-       --generator_tags "dev" \
-       --tags "dev"
+   guide/quickstart
+   guide/overview
+   guide/data
+   guide/workflows
+   guide/evaluation
+   guide/tutorials
 
-Template script: ``docs/tutorial/example_scripts/generation/eval.sh``.
+.. toctree::
+   :maxdepth: 2
+   :hidden:
+   :caption: Reference
 
-3. Predict on tabular data
-~~~~~~~~~~~~~~~~~~~~~~~~~~
+   reference/cli
+   reference/api
+   reference/models
 
-.. code-block:: bash
+.. toctree::
+   :maxdepth: 2
+   :hidden:
+   :caption: Development
 
-   python -m src.tabstruct.experiment.run_experiment \
-       --model "mlp" \
-       --save_model \
-       --max_steps_tentative 1500 \
-       --dataset "adult" \
-       --test_size 0.2 \
-       --valid_size 0.1 \
-       --tags "dev"
+   guide/development
 
-Template script: ``docs/tutorial/example_scripts/prediction/train.sh``.
+.. _citation:
 
-Citation
---------
+.. _citation-and-license:
 
-For attribution in academic contexts, please cite this work as:
+Citations
+---------
 
 .. code-block:: bibtex
 
@@ -190,24 +163,6 @@ For attribution in academic contexts, please cite this work as:
    @inproceedings{jiang2025well,
      title={How Well Does Your Tabular Generator Learn the Structure of Tabular Data?},
      author={Jiang, Xiangjian and Simidjievski, Nikola and Jamnik, Mateja},
-     booktitle={ICLR 2025 Workshop on Deep Generative Model in Machine Learning: Theory, Principle and Efficacy}
+     booktitle={ICLR 2025 Workshop on Deep Generative Models in Machine Learning: Theory, Principle and Efficacy},
+     year={2025}
    }
-
-Contents
---------
-
-.. toctree::
-   :maxdepth: 2
-   :caption: Guide
-
-   guide/overview
-   guide/quickstart
-
-.. toctree::
-   :maxdepth: 2
-   :caption: Reference
-
-   reference/api
-   reference/cli
-   reference/models
-

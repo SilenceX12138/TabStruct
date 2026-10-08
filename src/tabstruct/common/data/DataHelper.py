@@ -1,12 +1,13 @@
 import numpy as np
 import pandas as pd
-import wandb
 from sklearn.utils import compute_class_weight
 from tabcamel.data.dataset import TabularDataset
 from tabcamel.data.transform import CategoryTransform, NumericTransform, SimpleImputeTransform, TargetTransform
 
-from ..runtime.log.TerminalIO import TerminalIO
+import wandb
+
 from .DataModule import DataModule
+from .utils.preprocess import parse_col_type_info
 
 
 class DataHelper:
@@ -18,7 +19,6 @@ class DataHelper:
     # =                                                              =
     # ================================================================
     @classmethod
-    @TerminalIO.trace_func
     def create_data_module(cls, args):
         """Create a data module for training, validation and testing."""
         # === Load the dataset ===
@@ -32,28 +32,22 @@ class DataHelper:
         # === Process the dataset ===
         # Curate the dataset
         split_dict_curated = cls.curate_dataset(args, split_dict)
+
         # Preprocess the dataset
         split_dict_processed = cls.preprocess_dataset(args, split_dict_curated)
+
         # Log the data properties
         data_info_dict = cls.log_data_properties(args, split_dict_processed, data_info_dict, stage="processed")
         wandb.log({"data_info": wandb.Table(dataframe=pd.DataFrame(data_info_dict).T)})
 
-        # ===== Create the data module =====
+        # === Create the data module ===
         # Extract processed datasets
         train_set = split_dict_processed["train_set"]
         valid_set = split_dict_processed["valid_set"]
         test_set = split_dict_processed["test_set"]
 
         # Create data module with numpy arrays for better performance
-        data_module = DataModule(
-            args,
-            train_set.X_df.to_numpy(),
-            train_set.y_s.to_numpy(),
-            valid_set.X_df.to_numpy(),
-            valid_set.y_s.to_numpy(),
-            test_set.X_df.to_numpy(),
-            test_set.y_s.to_numpy(),
-        )
+        data_module = DataModule(args, train_set, valid_set, test_set)
 
         return data_module
 
@@ -120,16 +114,20 @@ class DataHelper:
         """Log the dataset properties for runtime reference."""
         if stage == "original":
             # === Feature names before transformation ===
-            feature_list = list(dataset_dict["full_set"].col2type.keys())
-            feature_list.remove(dataset_dict["full_set"].target_col)
-            args.full_feature_col_list_original = feature_list
-            args.full_feature_col2type_original = dataset_dict["full_set"].col2type
+            feature_list = dataset_dict["full_set"].X_df.columns.tolist()
+            args.full_feature_list_original = feature_list
+            args.full_col2type_original = dataset_dict["full_set"].col2type
             args.full_target_col_original = dataset_dict["full_set"].target_col
-            args.num_feature_col_list_original = [
-                col
-                for col in args.full_feature_col_list_original
-                if args.full_feature_col2type_original[col].name == "numerical"
+            args.num_feature_list_original = [
+                col for col in args.full_feature_list_original if args.full_col2type_original[col].name == "numerical"
             ]
+            args.cat_feature_list_original = [
+                feature for feature in feature_list if feature not in args.num_feature_list_original
+            ]
+            args.cat_feature_cardinality_list_original = TabularDataset.get_cardinality_list(
+                dataset_dict["full_set"],
+                args.cat_feature_list_original,
+            )
         elif stage == "split":
             args.train_num_samples_split = dataset_dict["train_set"].num_samples
         elif stage == "processed":
@@ -156,30 +154,25 @@ class DataHelper:
                     setattr(args, f"{split}_{attr}_{stage}", getattr(dataset_dict[f"{split}_set"], attr))
 
             # ===== Log special properties =====
+            # === Full dataframe: all columns (i.e., features + target) ===
+            args.full_col_list_processed = dataset_dict["full_set"].data_df.columns.tolist()
             # === The feature names after transformation ===
-            feature_list = list(dataset_dict["full_set"].col2type.keys())
             # Note: target column is not considered as a feature
-            feature_list.remove(dataset_dict["full_set"].target_col)
-            args.full_feature_col_list_processed = feature_list
-            args.num_feature_col_list_processed = (
-                feature_list
-                if args.categorical_as_numerical
-                else [
-                    col
-                    for col in args.full_feature_col2type_original.keys()
-                    if args.full_feature_col2type_original[col].name == "numerical" and col in feature_list
-                ]
+            feature_list = dataset_dict["full_set"].X_df.columns.tolist()
+            args.full_feature_list_processed = feature_list
+            args.num_feature_list_processed = (
+                feature_list if args.categorical_as_numerical else args.num_feature_list_original
             )
-            args.cat_feature_col_list_processed = list(
-                set(feature_list).difference(args.num_feature_col_list_processed)
-            )
+            args.cat_feature_list_processed = [
+                feature for feature in feature_list if feature not in args.num_feature_list_processed
+            ]
 
             # === The scaler list for transformation ===
             args.feature_scaler_list = dataset_dict["feature_scaler_list"]
             args.target_scaler_list = dataset_dict["target_scaler_list"]
-            if args.task == "classification":
+            if args.task == "classification" and len(args.target_scaler_list) > 0:
                 # === Record the mapping from encoded labels to original labels ===
-                for scaler in dataset_dict["target_scaler_list"]:
+                for scaler in args.target_scaler_list:
                     if isinstance(scaler, TargetTransform):
                         args.encoded2class = scaler.encoded2class
                 # === Compute class weights to balance datasets ===
@@ -198,16 +191,52 @@ class DataHelper:
                 """
                 args.class_encoded_list = list(args.encoded2class.keys())
                 class_weight_list = compute_class_weight(
-                    class_weight="balanced", classes=np.array(args.class_encoded_list), y=dataset_dict["train_set"].y_s
+                    class_weight="balanced",
+                    classes=np.array(args.class_encoded_list),
+                    y=dataset_dict["train_set"].y_s,
                 )
                 args.train_class_weight_list = class_weight_list
                 args.train_class2weight = {i: val for i, val in zip(args.class_encoded_list, class_weight_list)}
 
             # === Feature properties after transformation ===
-            args.cat_feature_cardinality_list_processed = TabularDataset.get_cardinality_list(
+            # Full: including three data splits
+            args.full_cardinality_list_processed = TabularDataset.get_cardinality_list(
                 dataset_dict["full_set"],
-                args.cat_feature_col_list_processed,
+                args.cat_feature_list_processed,
             )
+            # All col: including features and target
+            args.all_col_cardinality_list_processed = TabularDataset.get_cardinality_list(
+                dataset_dict["full_set"],
+                args.full_col_list_processed,
+            )
+        elif stage == "model":
+            # Feature and target list
+            args.full_feature_list_model = dataset_dict["data_module"].X_train_df.columns.tolist()
+            target_list = []
+            if args.task != "unsupervision":
+                target_list = dataset_dict["data_module"].y_train_df.columns.tolist()
+            args.full_target_list_model = target_list
+            # Scalers for model-specific processing
+            args.feature_scaler_model = dataset_dict["feature_scaler"]
+            args.target_scaler_model = dataset_dict["target_scaler"]
+            # Column types for model-specific processing (including both features and target)
+            col_type_info_dict = parse_col_type_info(
+                args.task,
+                args.feature_scaler_model,
+                args.target_scaler_model,
+                args.all_col_cardinality_list_processed,
+            )
+            args.full_order_numerical_list_model = col_type_info_dict["order_numerical_list"]
+            args.full_order_categorical_list_model = col_type_info_dict["order_categorical_list"]
+            args.full_indices_numerical_list_model = col_type_info_dict["indices_numerical_list"]
+            args.full_indices_categorical_list_model = col_type_info_dict["indices_categorical_list"]
+            args.full_cardinality_list_model = col_type_info_dict["full_cardinality_list"]
+            args.train_cardinality_list_model = col_type_info_dict["train_cardinality_list"]
+        elif stage == "eval":
+            args.full_col_list_eval = dataset_dict["col_list"]
+            args.full_col2type_eval = dataset_dict["col2type"]
+            args.onehot_scaler_list_eval = dataset_dict["onehot_scaler_list"]
+            args.ordinal_scaler_list_eval = dataset_dict["ordinal_scaler_list"]
 
     # ================================================================
     # =                                                              =
@@ -303,7 +332,7 @@ class DataHelper:
             task_type=args.task,
             target_col=args.full_target_col_original,
             metafeature_dict={
-                "col2type": args.full_feature_col2type_original,
+                "col2type": args.full_col2type_original,
             },
         )
 
@@ -323,7 +352,18 @@ class DataHelper:
     # ================================================================
     @classmethod
     def preprocess_dataset(cls, args, dataset_dict) -> dict:
-        target_col = dataset_dict["full_set"].target_col
+        # === Return the original data if preprocessing is disabled ===
+        if args.disable_preprocessing:
+            return {
+                # Datasets
+                "full_set": dataset_dict["full_set"],
+                "train_set": dataset_dict["train_set"],
+                "valid_set": dataset_dict["valid_set"],
+                "test_set": dataset_dict["test_set"],
+                # Scalers
+                "feature_scaler_list": [],
+                "target_scaler_list": [],
+            }
 
         # === Preprocess the features ===
         X_dict = cls.preprocess_features(args, dataset_dict)
@@ -331,43 +371,52 @@ class DataHelper:
         # === Preprocess the target ===
         y_dict = cls.preprocess_target(args, dataset_dict)
 
-        # === Build datasets with preprocessed features and target ===
+        # === Prepare the preprocessed dataframe ===
         # The preprocessing preserves the index of the original data
+        train_df = X_dict["X_train"]
+        valid_df = X_dict["X_valid"]
+        test_df = X_dict["X_test"]
+        if args.task != "unsupervision":
+            train_df = pd.concat([train_df, y_dict["y_train"]], axis=1)
+            valid_df = pd.concat([valid_df, y_dict["y_valid"]], axis=1)
+            test_df = pd.concat([test_df, y_dict["y_test"]], axis=1)
+
+        # === Build datasets with preprocessed features and target ===
+        # Get the target column
+        target_col = dataset_dict["full_set"].target_col
+        # After preprocessing, the dimensionality can be very high
+        # Thus, we can compute partial metafeature_dict outside TabularDataset to accelerate dataset construction
+        metafeature_dict_partial = {
+            "is_tensor": args.categorical_transform in ["ordinal", "onehot"],
+        }
+
         train_set = TabularDataset(
             dataset_name=args.dataset,
             task_type=args.task,
             target_col=target_col,
-            data_df=pd.concat([X_dict["X_train"], y_dict["y_train"]], axis=1),
-            metafeature_dict={
-                "is_tensor": True,
-            },
+            data_df=train_df,
+            metafeature_dict=metafeature_dict_partial,
         )
         valid_set = TabularDataset(
             dataset_name=args.dataset,
             task_type=args.task,
             target_col=target_col,
-            data_df=pd.concat([X_dict["X_valid"], y_dict["y_valid"]], axis=1),
-            metafeature_dict={
-                "is_tensor": True,
-            },
+            data_df=valid_df,
+            metafeature_dict=train_set.metafeature_dict,
         )
         test_set = TabularDataset(
             dataset_name=args.dataset,
             task_type=args.task,
             target_col=target_col,
-            data_df=pd.concat([X_dict["X_test"], y_dict["y_test"]], axis=1),
-            metafeature_dict={
-                "is_tensor": True,
-            },
+            data_df=test_df,
+            metafeature_dict=train_set.metafeature_dict,
         )
         full_set = TabularDataset(
             dataset_name=args.dataset,
             task_type=args.task,
             target_col=target_col,
             data_df=pd.concat([train_set.data_df, valid_set.data_df, test_set.data_df], axis=0),
-            metafeature_dict={
-                "is_tensor": True,
-            },
+            metafeature_dict=train_set.metafeature_dict,
         )
 
         return {
@@ -428,6 +477,15 @@ class DataHelper:
 
     @staticmethod
     def preprocess_target(args, dataset_dict: dict) -> dict:
+        # === Return None for unsupervised tasks ===
+        if args.task == "unsupervision":
+            return {
+                "y_train": None,
+                "y_valid": None,
+                "y_test": None,
+                "target_scaler_list": [],
+            }
+
         # === Dataset properties ===
         target_col = dataset_dict["full_set"].target_col
 
@@ -465,20 +523,38 @@ class DataHelper:
         }
 
     @classmethod
-    def recover_original_data(cls, args, X_processed: np.ndarray, y_processed: np.ndarray) -> dict:
-        # === Convert the processed samples to DataFrame ===
-        X_original = pd.DataFrame(X_processed, columns=args.full_feature_col_list_processed)
-        y_original = pd.DataFrame(y_processed, columns=[args.full_target_col_processed])
+    def recover_original_data(cls, args, X_processed: np.ndarray, y_processed: np.ndarray | None) -> dict:
+        """Recover original data from processed features and target.
 
-        # === Inverse transform the synthetic features ===
-        for feature_scaler in args.feature_scaler_list[::-1]:
+        Args:
+            args: Arguments containing scaler lists and column information
+            X_processed: Processed feature array
+            y_processed: Processed target array (can be None)
+
+        Returns:
+            Dictionary with recovered X_original and y_original DataFrames
+        """
+        # === Recover the processed features ===
+        X_original = pd.DataFrame(X_processed, columns=args.full_feature_list_processed)
+
+        # Apply inverse transformations in reverse order
+        for feature_scaler in reversed(args.feature_scaler_list):
             X_original = feature_scaler.inverse_transform(X_original)
-        for target_scaler in args.target_scaler_list[::-1]:
-            y_original = target_scaler.inverse_transform(y_original)
 
-        # === Align the order of the columns ===
-        X_original = X_original[args.full_feature_col_list_original]
-        y_original = y_original[args.full_target_col_original]
+        # Reorder columns to match original order
+        X_original = X_original[args.full_feature_list_original]
+
+        # === Recover the processed target ===
+        y_original = None
+        if y_processed is not None:
+            y_original = pd.DataFrame(y_processed, columns=[args.full_target_col_processed])
+
+            # Apply inverse transformations in reverse order
+            for target_scaler in reversed(args.target_scaler_list):
+                y_original = target_scaler.inverse_transform(y_original)
+
+            # Align the column order
+            y_original = y_original[args.full_target_col_original]
 
         return {
             "X_original": X_original,

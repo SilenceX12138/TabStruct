@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 120" role="img"><title>Synthetic table generation</title><style>
+@media (prefers-color-scheme: dark) {
+  [fill="#edf3ff"] { fill: #202d43; }
+  [fill="#3964fe"] { fill: #9db8ff; }
+  [stroke="#3964fe"] { stroke: #9db8ff; }
+  [stroke="#b5c9ff"] { stroke: #6487ce; }
+  [fill="#d97706"] { fill: #fbbf24; }
+  [stroke="#d97706"] { stroke: #fbbf24; }
+  [stroke="#475569"] { stroke: #a4b1c5; }
+}
+</style><rect width="240" height="120" rx="12" fill="#edf3ff"/><rect x="27" y="38" width="15" height="12" rx="2" fill="#3964fe" opacity="0.5"/><rect x="46" y="38" width="15" height="12" rx="2" fill="#3964fe" opacity="0.5"/><rect x="65" y="38" width="15" height="12" rx="2" fill="#d97706" opacity="0.5"/><rect x="27" y="55" width="15" height="12" rx="2" fill="#3964fe" opacity="0.7"/><rect x="46" y="55" width="15" height="12" rx="2" fill="#3964fe" opacity="0.7"/><rect x="65" y="55" width="15" height="12" rx="2" fill="#d97706" opacity="0.7"/><rect x="27" y="72" width="15" height="12" rx="2" fill="#3964fe" opacity="0.9"/><rect x="46" y="72" width="15" height="12" rx="2" fill="#3964fe" opacity="0.9"/><rect x="65" y="72" width="15" height="12" rx="2" fill="#d97706" opacity="0.9"/><path d="M98 60h38m-8-8 8 8-8 8" fill="none" stroke="#3964fe" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/><rect x="158" y="38" width="15" height="12" rx="2" fill="#3964fe" opacity="0.5"/><rect x="177" y="38" width="15" height="12" rx="2" fill="#3964fe" opacity="0.5"/><rect x="196" y="38" width="15" height="12" rx="2" fill="#d97706" opacity="0.5"/><rect x="158" y="55" width="15" height="12" rx="2" fill="#3964fe" opacity="0.7"/><rect x="177" y="55" width="15" height="12" rx="2" fill="#3964fe" opacity="0.7"/><rect x="196" y="55" width="15" height="12" rx="2" fill="#d97706" opacity="0.7"/><rect x="158" y="72" width="15" height="12" rx="2" fill="#3964fe" opacity="0.9"/><rect x="177" y="72" width="15" height="12" rx="2" fill="#3964fe" opacity="0.9"/><rect x="196" y="72" width="15" height="12" rx="2" fill="#d97706" opacity="0.9"/></svg>

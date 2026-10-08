@@ -3,7 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from rtdl_revisiting_models import FTTransformer
 
-from ..BasePredictor import BaseLightingPredictionModule, BaseLitPredictor
+from ..BasePredictor import BaseLightningPredictionModule, BaseLitPredictor
 
 
 class LitFTTransformer(BaseLitPredictor):
@@ -12,7 +12,7 @@ class LitFTTransformer(BaseLitPredictor):
         super().__init__(args)
 
         if args.task not in ["classification", "regression"]:
-            raise ValueError(f"Task {args.task} is not supported for MLP model")
+            raise ValueError(f"Task {args.task} is not supported for {self.name} model")
 
         self.model = _LitFTTransformer(args)
 
@@ -114,7 +114,7 @@ class LitFTTransformer(BaseLitPredictor):
         }
 
 
-class _LitFTTransformer(BaseLightingPredictionModule):
+class _LitFTTransformer(BaseLightningPredictionModule):
 
     def __init__(self, args):
         super().__init__(args)
@@ -126,8 +126,8 @@ class _LitFTTransformer(BaseLightingPredictionModule):
     # ================================================================
     def _create_torch_model(self):
         model = FTTransformerWrapper(
-            n_cont_features=len(self.args.num_feature_col_list_processed),
-            cat_cardinalities=self.args.cat_feature_cardinality_list_processed,
+            n_cont_features=len(self.args.num_feature_list_processed),
+            cat_cardinalities=self.args.full_cardinality_list_processed,
             d_out=self.args.full_num_classes_processed if self.args.task == "classification" else 1,
             model_params=self.args.model_params["architecture"],
         )

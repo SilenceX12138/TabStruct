@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 150" role="img" aria-labelledby="title desc">
+  <title id="title">Four dimensions of synthetic table evaluation</title>
+  <desc id="desc">Density estimation, privacy preservation, ML efficacy, and structural fidelity complement each other.</desc>
+  <style>
+    :root { --bg: #edf3ff; --panel: #fff; --blue: #3459d9; --amber: #d97706; --text: #334155; }
+    @media (prefers-color-scheme: dark) { :root { --bg: #202d43; --panel: #172235; --blue: #9db8ff; --amber: #fbbf24; --text: #dae3f1; } }
+    .label { font: 12px system-ui, sans-serif; fill: var(--text); }
+  </style>
+  <rect width="300" height="150" rx="12" fill="var(--bg)"/>
+  <g fill="var(--panel)">
+    <rect x="14" y="15" width="128" height="50" rx="7"/><rect x="158" y="15" width="128" height="50" rx="7"/>
+    <rect x="14" y="85" width="128" height="50" rx="7"/><rect x="158" y="85" width="128" height="50" rx="7"/>
+  </g>
+  <g fill="none" stroke="var(--blue)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M27 48c5 0 4-19 12-19s6 19 13 19"/>
+    <path d="M174 30l11-4 11 4v9c0 7-5 12-11 14-6-2-11-7-11-14z"/>
+    <path d="M27 98v24h25m-21-5 7-10 8 4 6-11"/>
+    <path d="M174 110l16-10m-16 10 16 11m0-21v21"/>
+  </g>
+  <g fill="var(--amber)"><circle cx="174" cy="110" r="3.5"/><circle cx="190" cy="100" r="3.5"/><circle cx="190" cy="121" r="3.5"/></g>
+  <g class="label"><text x="62" y="44">Density</text><text x="206" y="44">Privacy</text><text x="62" y="114">ML efficacy</text><text x="206" y="114">Structure</text></g>
+</svg>

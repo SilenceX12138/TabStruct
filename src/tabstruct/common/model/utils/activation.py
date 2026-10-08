@@ -1,4 +1,3 @@
-import torch
 import torch.nn as nn
 
 
@@ -8,11 +7,13 @@ def get_activation(value):
     elif value == "l_relu":
         # set the slope to align tensorflow
         return nn.LeakyReLU(negative_slope=0.2)
+    elif value == "silu":
+        return nn.SiLU()
     elif value == "sigmoid":
         return nn.Sigmoid()
     elif value == "tanh":
         return nn.Tanh()
-    elif value == "none":
+    elif value is None:
         return DeactFunc()
     else:
         raise NotImplementedError("activation for the gating network not recognized")

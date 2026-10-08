@@ -1,10 +1,12 @@
 import argparse
+import os
 from typing import Union
 
 import numpy as np
 import torch
 
-from ... import WANDB_ENTITY, WANDB_PROJECT, generator_list, model_to_do_list, predictior_list, unstable_generator_list
+from ... import (WANDB_ENTITY, WANDB_PROJECT, generator_list, manual_optimizer_model_list, model_to_do_list,
+                 predictior_list, unstable_generator_list)
 from ...runtime.error.ManualStopError import ManualStopError
 from ..log.TerminalIO import TerminalIO
 from ..log.WandbHelper import WandbHelper
@@ -119,10 +121,12 @@ def add_runtime_setup(parser: argparse.ArgumentParser) -> argparse.ArgumentParse
     parser.add_argument(
         "--task",
         type=str,
-        default="classification",
+        default=None,
+        required=True,
         choices=[
             "regression",
             "classification",
+            "unsupervision",
         ],
     )
     parser.add_argument(
@@ -184,7 +188,7 @@ def add_dataset_setup(parser: argparse.ArgumentParser) -> argparse.ArgumentParse
     parser.add_argument(
         "--split_mode",
         type=str,
-        default="stratified",
+        default=None,
         choices=["random", "stratified", "fixed"],
     )
     parser.add_argument("--num_repeats", type=int, default=10, help="number of repeats for the cross-validation")
@@ -195,21 +199,29 @@ def add_dataset_setup(parser: argparse.ArgumentParser) -> argparse.ArgumentParse
     parser.add_argument("--valid_id", type=int, default=0, help="Index of the validation split")
 
     # ===== Data processing =====
-    parser.add_argument("--categorical_impute", type=str, default="most_frequent", choices=["most_frequent"])
-    parser.add_argument("--numerical_impute", type=str, default="mean", choices=["mean", "median"])
     parser.add_argument(
-        "--categorical_transform",
+        "--model_specific_preprocessing", action="store_true", help="Enable model-specific preprocessing"
+    )
+    parser.set_defaults(model_specific_preprocessing=False)
+    parser.add_argument("--disable_preprocessing_tentative", action="store_true", help="Disable preprocessing")
+    parser.set_defaults(disable_preprocessing_tentative=False)
+    parser.add_argument("--categorical_impute_tentative", type=str, default="most_frequent", choices=["most_frequent"])
+    parser.add_argument("--numerical_impute_tentative", type=str, default="mean", choices=["mean", "median"])
+    parser.add_argument(
+        "--categorical_transform_tentative",
         type=str,
         default="onehot",
         choices=["onehot", "ordinal"],
     )
     parser.add_argument(
-        "--numerical_transform", type=str, default="standard", choices=["standard", "minmax", "quantile"]
+        "--numerical_transform_tentative", type=str, default="standard", choices=["standard", "minmax", "quantile"]
     )
     parser.add_argument(
-        "--categorical_as_numerical", action="store_true", help="Treat categorical as numerical during normalisation"
+        "--categorical_as_numerical_tentative",
+        action="store_true",
+        help="Treat categorical as numerical during normalisation",
     )
-    parser.set_defaults(categorical_as_numerical=False)
+    parser.set_defaults(categorical_as_numerical_tentative=False)
 
     # ===== Data loading =====
     parser.add_argument("--num_workers", type=int, default=0, help="number of workers for loading dataset")
@@ -233,6 +245,12 @@ def add_curation_setup(parser: argparse.ArgumentParser) -> argparse.ArgumentPars
     parser.add_argument("--curate_ratio", type=float, default=1.0, help="#Curate : #Real samples")
 
     # === Data sources ===
+    parser.add_argument(
+        "--disable_synthetic_data_validation",
+        action="store_true",
+        help="Disable synthetic data validation for generator information",
+    )
+    parser.set_defaults(disable_synthetic_data_validation=False)
     parser.add_argument("--generator", type=str, default=None, help="name of the generator")
     parser.add_argument("--generator_tags", nargs="+", type=str, default=[], help="tags of the generator")
 
@@ -272,7 +290,7 @@ def add_model_setup(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
         "--saved_checkpoint_path",
         type=str,
         default=None,
-        help="name of the wandb artifact name (e.g., model-1dmvja9n:v0)",
+        help="Path to the saved checkpoint",
     )
     parser.add_argument("--checkpoint_tags", nargs="+", type=str, default=[], help="tags of the checkpoint")
     parser.add_argument(
@@ -318,47 +336,52 @@ def add_lit_train_setup(parser: argparse.ArgumentParser) -> argparse.ArgumentPar
         "--max_steps_tentative", type=int, default=10000, help="Specify the max number of steps to train."
     )
     parser.add_argument("--batch_size_tentative", type=int, default=512, help="Tentative batch size for training only")
-    parser.add_argument("--full_batch_training", action="store_true", dest="full_batch_training")
-    parser.set_defaults(full_batch_training=False)
 
     # === Optimisation ===
     # Optimiser
     parser.add_argument("--optimizer", type=str, choices=["adam", "adamw", "sgd"], default="sgd")
-    parser.add_argument("--gradient_clip_val", type=float, default=2.5, help="Upper bound to cut gradients")
+    parser.add_argument("--gradient_clip_val", type=float, default=1, help="Upper bound to cut gradients")
     # Scheduler
     parser.add_argument(
         "--lr_scheduler",
         type=str,
-        choices=["plateau", "cosine_warm_restart", "linear", "lambda", "none"],
-        default="none",
+        default=None,
+        choices=["plateau", "cosine_warm_restart", "linear", "lambda"],
     )
     parser.add_argument("--cosine_warm_restart_eta_min", type=float, default=1e-6)
     parser.add_argument("--cosine_warm_restart_t_0", type=int, default=35)
     parser.add_argument("--cosine_warm_restart_t_mult", type=float, default=1)
-    # Model selection
+    # Early stopping
     parser.add_argument(
-        "--metric_model_selection",
+        "--split_early_stopping",
         type=str,
-        default="cross_entropy_loss",
-        choices=["cross_entropy_loss", "total_loss", "balanced_accuracy", "mse_loss"],
+        default="valid",
+        choices=["train", "valid", "test"],
+        help="The data split for checkpoint/early stopping monitoring.",
     )
     parser.add_argument(
-        "--patience_early_stopping",
-        type=int,
-        default=50,
-        help="It will train for at least args.check_val_every_n_epoch * args.patience_early_stopping epochs",
+        "--metric_early_stopping",
+        type=str,
+        default="total_loss",
+        choices=["cross_entropy_loss", "total_loss", "balanced_accuracy", "mse_loss"],
     )
     parser.add_argument(
         "--log_every_n_steps_tentative",
         type=int,
-        default=500,
+        default=50,
         help="number of steps at which to display the Trainer logs (including wandb.log within lightning module)",
     )
     parser.add_argument(
         "--check_val_every_n_epoch_tentative",
         type=int,
-        default=1,
+        default=5,
         help="number of epochs at which to check the validation",
+    )
+    parser.add_argument(
+        "--patience_early_stopping_tentative",
+        type=int,
+        default=50,
+        help="It will train for at least args.check_val_every_n_epoch * args.patience_early_stopping epochs",
     )
 
     return parser
@@ -430,9 +453,16 @@ def add_eval_setup(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
         "--enable_eval_structure",
         action="store_true",
         dest="eval_structure",
-        help="Disable the evaluation structure metrics.",
+        help="Enable the evaluation structure metrics.",
     )
     parser.set_defaults(eval_structure=False)
+    parser.add_argument(
+        "--enable_full_split_eval",
+        action="store_true",
+        dest="full_split_eval",
+        help="Enable full evaluation on all splits.",
+    )
+    parser.set_defaults(full_split_eval=False)
 
     return parser
 
@@ -468,6 +498,21 @@ def add_optuna_setup(parser: argparse.ArgumentParser) -> argparse.ArgumentParser
     parser.add_argument(
         "--tune_max_workers", type=int, default=5, help="The number of workers for a single tuning trial."
     )
+    parser.add_argument(
+        "--metric_model_selection",
+        type=str,
+        default="total_loss",
+        choices=[
+            "cross_entropy_loss",
+            "total_loss",
+            "balanced_accuracy",
+            "mse_loss",
+            "rmse",
+            "mse",
+            "r2",
+            "density_high_order_alpha_precision",
+        ],
+    )
 
     return parser
 
@@ -498,6 +543,17 @@ def add_reg_test_setup(parser: argparse.ArgumentParser) -> argparse.ArgumentPars
 # =                                                              =
 # ================================================================
 def cross_update(args):
+    # Tuning selects from validation metrics, so evaluate enabled metric
+    # families on the validation split for every nested trial.
+    if args.enable_optuna:
+        args.full_split_eval = True
+
+    # A torchrun process group already parallelizes each trial across ranks.
+    # Run repeated splits sequentially so child workers do not reuse ranks and
+    # the same distributed rendezvous port concurrently.
+    if int(os.environ.get("WORLD_SIZE", "1")) > 1 and args.tune_max_workers != 1:
+        args.tune_max_workers = 1
+
     # === When test_size and valid_size are bigger than 1, they are considered as the number of samples ===
     if args.test_size > 1:
         args.test_size = int(args.test_size)
@@ -512,8 +568,16 @@ def cross_update(args):
     if args.task != "classification" and args.split_mode == "stratified":
         args.split_mode = "random"
 
-    # === For generation, if the model is "real", the synthetic data path will be a dummy path ===
-    if args.pipeline == "generation" and args.model == "real":
+    # === Set the default splitting mode when it is unspecified ===
+    if args.split_mode is None:
+        if args.task == "classification":
+            args.split_mode = "stratified"
+        else:
+            args.split_mode = "random"
+
+    # === For generation, if the model is "real", only evaluate and the synthetic data path will be a dummy path ===
+    if args.pipeline == "generation" and args.model in ["real", "real-test"]:
+        args.eval_only = True
         args.synthetic_data_path = "dummy_path_for_real_data"
 
     # === For generation, retrieve the synthetic data path > checkpoint path ===
@@ -554,7 +618,7 @@ def cross_update(args):
 
     # === Retrieve the model checkpoint when path is not provided ===
     if (
-        args.model != "real"
+        args.model not in ["real", "real-test"]
         and len(args.checkpoint_tags) > 0
         and (args.use_saved_checkpoint or args.eval_only)
         and not args.saved_checkpoint_path
@@ -579,6 +643,8 @@ def sanity_check(args):
     # === Task compatibility checks ===
     if args.task == "regression" and args.split_mode != "random":
         raise ValueError("Regression task only supports random data split.")
+    if args.task == "unsupervision" and args.pipeline != "generation":
+        raise ValueError("Unsupervised task only supports generation pipeline.")
 
     # === Model compatibility checks ===
     if args.model in model_to_do_list:
@@ -593,14 +659,15 @@ def sanity_check(args):
         if args.synthetic_data_path and args.saved_checkpoint_path:
             raise ValueError("Cannot provide both synthetic data path and generator checkpoint path.")
 
-        if args.categorical_transform not in ["onehot", "ordinal"]:
-            raise ValueError("Generation only supports onehot and ordinal encoding for categorical features.")
-
         if (args.use_saved_checkpoint and not args.saved_checkpoint_path) and len(args.checkpoint_tags) == 0:
             raise ValueError("Checkpoint tags should be provided for the generator checkpoint.")
 
     # === Synthetic data path checks ===
-    if args.synthetic_data_path and args.model != "real":
+    if (
+        (not args.disable_synthetic_data_validation)
+        and args.synthetic_data_path
+        and (args.model not in ["real", "real-test"])
+    ):
         validate_synthetic_data_path(args)
 
 
@@ -701,12 +768,65 @@ def validate_synthetic_data_path(args):
     elif args.generator and not generator_retrieved:
         if len(args.generator_tags) == 0:
             raise ValueError("Generator tags should be provided for customised synthetic data.")
-        TerminalIO.print(f"Using customised synthetic data from {args.curate_data_path}.", TerminalIO.OKGREEN)
+        TerminalIO.print(f"Using customised synthetic data from {args.synthetic_data_path}.", TerminalIO.OKGREEN)
     elif not args.generator and generator_retrieved:
         args.generator = generator_retrieved
         args.generator_tags = generator_retrieved_tags
     else:
         raise ValueError("Invalid generator and invalid run id for synthetic data.")
+
+
+def fix_tentative_data_preprocessing_args(args, model_specific_scaler_config_dict):
+    """Fix tentative data preprocessing arguments.
+
+    Args:
+        args (Namespace): The arguments for the experiment.
+        model_specific_scaler_config_dict (dict): The model-specific scaler configuration.
+    """
+    # Use tentative configurations by default
+    data_preprocessing_attr_list = [
+        "disable_preprocessing",
+        "categorical_impute",
+        "numerical_impute",
+        "categorical_transform",
+        "numerical_transform",
+        "categorical_as_numerical",
+    ]
+    scaler_config_dict = {attr: getattr(args, f"{attr}_tentative") for attr in data_preprocessing_attr_list}
+
+    # Update scaler config dict with model-specific configs, if needed
+    if args.model_specific_preprocessing:
+        scaler2attr_list = {
+            "context": [
+                "disable_preprocessing",
+            ],
+            "feature_scaler": [
+                # Impute
+                "categorical_impute",
+                "numerical_impute",
+                # Categorical features
+                "categorical_transform",
+                # Numerical features
+                "numerical_transform",
+                "categorical_as_numerical",
+            ],
+            "target_scaler": [],
+        }
+
+        for scaler, attr_list in scaler2attr_list.items():
+            scaler_config = model_specific_scaler_config_dict.get(scaler, {})
+            for attr in attr_list:
+                # Only update if the attribute exists in the scaler config
+                if attr in scaler_config:
+                    scaler_config_dict[attr] = scaler_config[attr]
+
+    # Update args attributes with updated configs
+    for arg, value in scaler_config_dict.items():
+        setattr(args, arg, value)
+
+    # Sanity check for the configurations
+    if args.pipeline == "generation" and args.categorical_transform not in ["onehot", "ordinal"]:
+        raise ValueError("Generation only supports onehot and ordinal encoding for categorical features.")
 
 
 def fix_tentative_training_args(args):
@@ -724,15 +844,25 @@ def fix_tentative_training_args(args):
 
     # === log_every_n_steps ===
     # Log at least five times before finish training
+    args.log_every_n_steps = int(min(args.log_every_n_steps_tentative, args.max_steps // 5))
     # Log at least once per epoch (one more time from each training epoch end)
-    args.log_every_n_steps = int(
-        min(min(args.log_every_n_steps_tentative, args.max_steps // 5), max(steps_per_epoch, 1))
-    )
+    if args.log_every_n_steps > args.max_steps:
+        args.log_every_n_steps = args.max_steps
 
     # === check val every n epoch ===
     # Checkpoint at least once before finish training
     max_epochs = max(np.floor(args.max_steps / steps_per_epoch), 1)
     args.check_val_every_n_epoch = int(max(min(args.check_val_every_n_epoch_tentative, max_epochs), 1))
+
+    # === patience early stopping ===
+    if args.model in manual_optimizer_model_list:
+        # Disable early stopping for manual optimizers
+        args.patience_early_stopping = None
+    else:
+        # Early stopping patience should be at least 20% of the max epochs
+        args.patience_early_stopping = int(
+            max(args.patience_early_stopping_tentative, max_epochs * 0.2 / args.check_val_every_n_epoch)
+        )
 
 
 def adjust_curate_data_info(args):

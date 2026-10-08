@@ -29,7 +29,6 @@ class GOGGLE(BaseTabEvalJointGenerator):
             threshold=args.model_params["optimization"]["threshold"],
             # Misc.
             sampling_patience=1,
-            strict=False,
         )
 
     @classmethod

@@ -1,0 +1,56 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1100" height="410" viewBox="0 0 1100 410" role="img" aria-labelledby="title description">
+  <title id="title">Implemented TabStruct workflow</title>
+  <desc id="description">TabCamel data loading, splitting, and preprocessing feed prediction and generation. Predictors produce split metrics. Generators save synthetic CSVs. TabEval supplies evaluators, and the synthetic-training prediction workflow measures ML efficacy. Together they cover density estimation, privacy preservation, ML efficacy, and structural fidelity. Models and metrics are recorded as local artifacts and W&amp;B summaries.</desc>
+  <defs>
+    <style>
+      @media (prefers-color-scheme: dark) {
+        [fill="#f4f7ff"] { fill: #202d43; }
+        [fill="#fff"] { fill: #172235; }
+        [fill="#203052"] { fill: #dbe5f4; }
+        [stroke="#bdcbed"] { stroke: #5773a4; }
+        [fill="#3459d9"] { fill: #9bb3ff; }
+        [stroke="#3459d9"] { stroke: #9bb3ff; }
+      }
+    </style>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto"><path d="M0 0L10 5L0 10" fill="#3459d9"/></marker>
+  </defs>
+  <rect width="1100" height="410" rx="14" fill="#f4f7ff"/>
+  <g font-family="system-ui, sans-serif" fill="#203052">
+    <text x="34" y="40" font-size="23" font-weight="600">One data protocol · Two experiment pipelines</text>
+    <g fill="#fff" stroke="#bdcbed" stroke-width="1.5">
+      <rect x="34" y="149" width="290" height="118" rx="10"/>
+      <rect x="394" y="76" width="290" height="108" rx="10"/>
+      <rect x="394" y="224" width="290" height="108" rx="10"/>
+      <rect x="754" y="76" width="312" height="108" rx="10"/>
+      <rect x="754" y="224" width="312" height="108" rx="10"/>
+    </g>
+    <g font-size="19" font-weight="600">
+      <text x="54" y="181" font-size="18">Prepare data · TabCamel</text>
+      <text x="414" y="109">Prediction</text>
+      <text x="414" y="257">Generation</text>
+      <text x="774" y="109">Supervised metrics</text>
+      <text x="774" y="257">Evaluation · TabEval</text>
+    </g>
+    <g font-size="16">
+      <text x="54" y="209">Train / valid / test</text>
+      <text x="54" y="237">Curation · Fitted transforms</text>
+      <text x="414" y="137">Fit or restore a predictor</text>
+      <text x="414" y="162">Classify or regress</text>
+      <text x="414" y="285">Fit · Sample · Restore columns</text>
+      <text x="414" y="310">Save synthetic_samples.csv</text>
+      <text x="774" y="137">Classification / regression</text>
+      <text x="774" y="162">Train, validation, test scores</text>
+      <text x="774" y="285" font-size="15">Density estimation · Privacy</text>
+      <text x="774" y="310" font-size="15">ML efficacy · Structural fidelity</text>
+    </g>
+    <text x="34" y="381" font-size="17">Outputs: CSV / model artifacts + W&amp;B parameters and summaries</text>
+  </g>
+  <text x="555" y="208" font-family="system-ui, sans-serif" font-size="12" fill="#203052">Synthetic training</text>
+  <path d="M539 224V189" fill="none" stroke="#3459d9" stroke-width="1.8" stroke-dasharray="4 3" marker-end="url(#arrow)"/>
+  <g fill="none" stroke="#3459d9" stroke-width="2.2" marker-end="url(#arrow)">
+    <path d="M324 184H356V130H391"/>
+    <path d="M324 232H356V278H391"/>
+    <path d="M684 130H751"/>
+    <path d="M684 278H751"/>
+  </g>
+</svg>

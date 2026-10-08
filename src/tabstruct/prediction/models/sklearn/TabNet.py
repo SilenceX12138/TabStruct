@@ -27,7 +27,9 @@ class TabNet(BaseSklearnPredictor):
         else:
             raise ValueError(f"Task {args.task} is not supported by {args.model}")
 
+        pretrain = args.model_params.pop("pretrain")
         self.model = model_class(**args.model_params)
+        args.model_params["pretrain"] = pretrain
 
     def fit(self, data_module):
         virtual_batch_size = max(self.args.batch_size // 2, 1)
@@ -49,13 +51,22 @@ class TabNet(BaseSklearnPredictor):
         # === Train the model ===
         self.model.fit(
             data_module.X_train,
-            data_module.y_train,
-            eval_set=[(data_module.X_valid, data_module.y_valid)],
+            data_module.y_train if self.args.task == "classification" else data_module.y_train.reshape(-1, 1),
+            eval_set=[
+                (
+                    data_module.X_valid,
+                    data_module.y_valid if self.args.task == "classification" else data_module.y_valid.reshape(-1, 1),
+                )
+            ],
             # TabNet does not support weighted loss with dynamic weights
             # eval_metric=[WeightedCrossEntropy()],
             # WeightedCrossEntropy() has different input order to PyTorch loss functions
-            loss_fn=torch.nn.CrossEntropyLoss(
-                weight=torch.tensor(self.args.train_class_weight_list, dtype=torch.float32, device=self.args.device)
+            loss_fn=(
+                torch.nn.CrossEntropyLoss(
+                    weight=torch.tensor(self.args.train_class_weight_list, dtype=torch.float32, device=self.args.device)
+                )
+                if self.args.task == "classification"
+                else None
             ),
             batch_size=self.args.batch_size,
             virtual_batch_size=virtual_batch_size,

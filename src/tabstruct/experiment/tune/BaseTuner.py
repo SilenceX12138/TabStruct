@@ -9,7 +9,7 @@ import optuna
 from optuna.integration.wandb import WeightsAndBiasesCallback
 from optuna.trial import TrialState
 
-from src.tabstruct.common import TUNE_STUDY_TIMEOUT, WANDB_ENTITY, WANDB_PROJECT
+from src.tabstruct.common import TUNE_STUDY_TIMEOUT, WANDB_ENTITY, WANDB_PROJECT, metric_to_maximize_list
 from src.tabstruct.common.runtime.config.argument import AddOnlyNamespace
 from src.tabstruct.common.runtime.log.TerminalIO import TerminalIO
 from src.tabstruct.experiment.pipeline.PipelineHelper import PipelineHelper
@@ -61,7 +61,7 @@ class OptunaTuner(BaseTuner):
         sampler = optuna.samplers.TPESampler(seed=self.args.seed)
         study = optuna.create_study(direction=self.optimization_direction, sampler=sampler, pruner=self.pruner)
         # Start with the default hyperparameters
-        study.enqueue_trial(params=self.model_class._define_default_params())
+        study.enqueue_trial(params=self._flatten_model_param_dict(self.model_class._define_default_params()))
         # Optimize the study
         study.optimize(
             self.objective,
@@ -80,7 +80,17 @@ class OptunaTuner(BaseTuner):
 
         # === Perform the single trial ===
         metric_dict = self.single_trial(args_list)
-        score = metric_dict["valid_metrics"][self.args.metric_model_selection]
+
+        # Fail fast with a helpful message when the requested metric is missing
+        valid_metrics = metric_dict.get("valid_metrics", {})
+        if self.args.metric_model_selection not in valid_metrics:
+            available_metrics = ", ".join(sorted(valid_metrics.keys()))
+            raise KeyError(
+                f"Metric '{self.args.metric_model_selection}' is not available in valid_metrics. "
+                f"Available metrics: [{available_metrics}]"
+            )
+
+        score = valid_metrics[self.args.metric_model_selection]
 
         # === Log the metric values for each trial ===
         self.metric_dict_list.append(metric_dict)
@@ -114,9 +124,11 @@ class OptunaTuner(BaseTuner):
                 temp_args.test_id = test_id
                 temp_args.valid_id = valid_id
 
-                # === Add runtime args ===
-                temp_args = AddOnlyNamespace(**vars(temp_args))
+                # === Set the model hyperparameters ===
                 temp_args.model_params = model_params
+
+                # === Add runtime args (optional) ===
+                temp_args = AddOnlyNamespace(**vars(temp_args))
 
                 new_args_list.append(temp_args)
 
@@ -162,6 +174,26 @@ class OptunaTuner(BaseTuner):
     # =                         Utils                                =
     # =                                                              =
     # ================================================================
+    def _flatten_model_param_dict(self, param_dict: dict) -> dict:
+        """Flattens a nested dictionary of model parameters into a single-level dictionary.
+
+        Args:
+            param_dict (dict): The dictionary of model parameters, potentially containing nested dictionaries.
+
+        Returns:
+            dict: A flattened dictionary where nested dictionaries are merged into the top-level dictionary.
+        """
+
+        flat_param_dict = {}
+        for key, value in param_dict.items():
+            if isinstance(value, dict):
+                for sub_key, sub_value in value.items():
+                    flat_param_dict[sub_key] = sub_value
+            else:
+                flat_param_dict[key] = value
+
+        return flat_param_dict
+
     def reduce_metric_dict_list(self, metric_dict_list):
         metric_dict_agg = {}
         for metric_dict in metric_dict_list:
@@ -197,7 +229,7 @@ class OptunaTuner(BaseTuner):
         return metric
 
     def get_optimization_direction(self):
-        if self.args.metric_model_selection in ["balanced_accuracy"]:
+        if self.args.metric_model_selection in metric_to_maximize_list:
             return "maximize"
         else:
             return "minimize"

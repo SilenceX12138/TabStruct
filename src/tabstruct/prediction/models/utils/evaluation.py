@@ -1,8 +1,20 @@
+from typing import Any
+
 import numpy as np
+import pandas as pd
 import torch
 import torch.nn.functional as F
-from sklearn.metrics import (balanced_accuracy_score, f1_score, log_loss, mean_squared_error, precision_score, r2_score,
-                             recall_score, roc_auc_score, root_mean_squared_error)
+from sklearn.metrics import (
+    balanced_accuracy_score,
+    f1_score,
+    log_loss,
+    mean_squared_error,
+    precision_score,
+    r2_score,
+    recall_score,
+    roc_auc_score,
+    root_mean_squared_error,
+)
 from sklearn.preprocessing import OneHotEncoder
 from torchmetrics.functional.classification import multiclass_calibration_error
 
@@ -12,12 +24,18 @@ from torchmetrics.functional.classification import multiclass_calibration_error
 # =                   Data operations                            =
 # =                                                              =
 # ================================================================
-def compute_all_metrics(args, y_true: np.ndarray, y_pred: np.ndarray, y_hat: np.ndarray):
+def compute_all_metrics(
+    args: Any,
+    y_true: np.ndarray,
+    y_pred: np.ndarray,
+    y_hat: np.ndarray | None,
+) -> dict[str, float]:
+    """Compute task metrics, restoring regression targets to their original units."""
     metrics = {}
     if args.task == "classification":
         metrics = compute_classification_metrics(args, y_true, y_pred, y_hat)
     elif args.task == "regression":
-        metrics = compute_regression_metrics(y_true, y_pred)
+        metrics = compute_regression_metrics(args, y_true, y_pred)
     else:
         raise NotImplementedError("args.task must be either 'classification' or 'regression'")
 
@@ -81,8 +99,12 @@ def compute_classification_metrics(args, y_true: np.ndarray, y_pred: np.ndarray,
     return metrics
 
 
-def compute_regression_metrics(y_true: np.ndarray, y_pred: np.ndarray):
+def compute_regression_metrics(args, y_true: np.ndarray, y_pred: np.ndarray):
     metrics = {}
+
+    # === Convert y_true and y_pred to raw values ===
+    y_true = recover_regression_target(args, y_true)
+    y_pred = recover_regression_target(args, y_pred)
 
     # === General metrics for regression ===
     metrics["rmse"] = root_mean_squared_error(y_true, y_pred)
@@ -90,6 +112,22 @@ def compute_regression_metrics(y_true: np.ndarray, y_pred: np.ndarray):
     metrics["r2"] = r2_score(y_true, y_pred)
 
     return metrics
+
+
+def recover_regression_target(args: Any, values: np.ndarray) -> np.ndarray:
+    """Invert fitted benchmark target transforms without changing model outputs."""
+    if not args.target_scaler_list:
+        return values
+
+    target = pd.DataFrame(
+        np.asarray(values).reshape(-1, 1),
+        columns=[args.full_target_col_processed],
+        copy=True,
+    )
+    for scaler in reversed(args.target_scaler_list):
+        target = scaler.inverse_transform(target)
+
+    return target.to_numpy().reshape(-1)
 
 
 # ================================================================

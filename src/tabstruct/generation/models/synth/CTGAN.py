@@ -1,9 +1,9 @@
 from tabeval.plugins.generic.plugin_ctgan import CTGANPlugin
 
-from ..BaseGenerator import BaseTabEvalConditionalGenerator
+from ..BaseGenerator import BaseTabEvalJointGenerator
 
 
-class CTGAN(BaseTabEvalConditionalGenerator):
+class CTGAN(BaseTabEvalJointGenerator):
 
     def __init__(self, args):
         """Note: CTGAN only supports using categorical features as conditioning variables."""

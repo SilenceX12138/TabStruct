@@ -16,7 +16,6 @@ class ARF(BaseTabEvalJointGenerator):
             max_iters=args.model_params["optimization"]["max_iters"],
             early_stop=args.model_params["optimization"]["early_stop"],
             # Misc.
-            strict=False,
         )
 
     @classmethod
