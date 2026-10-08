@@ -1,10 +1,9 @@
 import pandas as pd
+import wandb
 from tabeval.metrics.eval_density import HighOrderMetrics, LowOrderMetrics
 from tabeval.metrics.eval_privacy import DCR
 from tabeval.metrics.eval_structure import UtilityPerFeature
 from tqdm import tqdm
-
-import wandb
 
 
 # ================================================================
@@ -172,11 +171,6 @@ def compute_structure_metrics(
                 loader_dict_syn["all_ordinal"],
                 column_list=column_list,
                 time_limit=60,  # 1 minute time limit for each feature's utility evaluation
-                custom_hyperparameters={
-                    # TODO: restore to default configurations
-                    "KNN": {},
-                    "RF": {},
-                },
             )
         else:
             raise NotImplementedError(f"Proxy structure metric {proxy_structure_metric} is not implemented.")

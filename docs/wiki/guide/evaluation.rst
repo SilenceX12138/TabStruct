@@ -38,10 +38,7 @@ The generation runner delegates structural evaluation to **TabEval**'s
 features and the original supervised target in ``full_col_list_eval`` and uses
 an ordinal-encoded view. Enable it with ``--enable_eval_structure``.
 
-The current call specifies ``custom_hyperparameters={"KNN": {}, "RF": {}}``
-and ``time_limit=60`` per feature. This is the current configured evaluator;
-it does not establish reproduction of the paper's full predictor ensemble,
-conditional-independence experiments, or result aggregation. Returned keys are
+Returned keys are
 prefixed ``structure_`` and incorporate the installed TabEval metric name and
 its result keys. Inspect the per-feature results as well as any aggregates.
 
