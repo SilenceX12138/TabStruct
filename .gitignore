@@ -196,3 +196,7 @@ resources
 docs/wiki/_build
 docs/wiki/_static
 docs/wiki/_templates
+src/tabstruct/generation/models/custom/latent/pretrain
+core
+excel_backup_*
+.ruff_cache

@@ -1,9 +1,9 @@
 import torch
-import torch.nn as nn
 import torch.nn.functional as F
 
-from ..BasePredictor import BaseLightingPredictionModule, BaseLitPredictor
-from ..utils.activation import get_activation
+from src.tabstruct.common.model.utils.component import MLP
+
+from ..BasePredictor import BaseLightningPredictionModule, BaseLitPredictor
 
 
 class LitMLP(BaseLitPredictor):
@@ -12,7 +12,7 @@ class LitMLP(BaseLitPredictor):
         super().__init__(args)
 
         if args.task not in ["classification", "regression"]:
-            raise ValueError(f"Task {args.task} is not supported for MLP model")
+            raise ValueError(f"Task {args.task} is not supported for {self.name} model")
 
         self.model = _LitMLP(args)
 
@@ -45,7 +45,7 @@ class LitMLP(BaseLitPredictor):
         hidden_dim = trial.suggest_int("hidden_dim", 10, 100)
         n_layers = trial.suggest_int("n_layers", 1, 5)
         params_arch = {
-            "activation": trial.suggest_categorical("activation", ["tanh", "relu", "l_relu", "sigmoid", "none"]),
+            "activation": trial.suggest_categorical("activation", ["tanh", "relu", "l_relu", "sigmoid", None]),
             "hidden_layer_list": n_layers * [hidden_dim],
             "dropout_rate": trial.suggest_float("dropout_rate", 0, 0.5),
             "batch_normalization": trial.suggest_categorical("batch_normalization", [True, False]),
@@ -100,7 +100,7 @@ class LitMLP(BaseLitPredictor):
         }
 
 
-class _LitMLP(BaseLightingPredictionModule):
+class _LitMLP(BaseLightningPredictionModule):
 
     def __init__(self, args):
         super().__init__(args)
@@ -136,49 +136,3 @@ class _LitMLP(BaseLightingPredictionModule):
             losses["total_loss"] = losses["cross_entropy_loss"]
 
         return losses
-
-
-class MLP(nn.Module):
-
-    def __init__(
-        self,
-        input_dim: int,
-        output_dim: int,
-        activation: str,
-        hidden_layer_list: list,
-        batch_normalization: bool = True,
-        dropout_rate: float = 0,
-    ) -> None:
-        """MLP for classification or regression
-
-        Args:
-            output_dim (int): number of nodes for the output layer of the prediction net, 1 (regression) or 2 (classification)
-            activation (str): activation function of the prediction net: 'relu', 'l_relu', 'sigmoid', 'tanh', or 'none'
-            hidden_layer_list (list): number of nodes for each hidden layer for the prediction net, example: [200,200]
-        """
-        super().__init__()
-
-        self.num_classes = output_dim
-        self.act = get_activation(activation)
-        full_layer_list = [input_dim, *hidden_layer_list]
-        self.fn = nn.Sequential()
-        for i in range(len(full_layer_list) - 1):
-            self.fn.add_module("fn{}".format(i), nn.Linear(full_layer_list[i], full_layer_list[i + 1]))
-            self.fn.add_module("act{}".format(i), self.act)
-            # use BN after activation has better performance
-            if batch_normalization:
-                self.fn.add_module("bn{}".format(i), nn.BatchNorm1d(full_layer_list[i + 1]))
-            if dropout_rate > 0:
-                self.fn.add_module("dropout{}".format(i), nn.Dropout(dropout_rate))
-
-        self.head = nn.Sequential()
-        self.head.add_module("head", nn.Linear(full_layer_list[-1], output_dim))
-
-        # when using cross-entropy loss in pytorch, we do not need to use softmax.
-        # self.head.add_module('softmax', nn.Softmax(-1))
-
-    def forward(self, x):
-        x_emb = self.fn(x)
-        x = self.head(x_emb)
-
-        return x

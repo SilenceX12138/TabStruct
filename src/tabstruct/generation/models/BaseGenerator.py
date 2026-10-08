@@ -1,35 +1,71 @@
-from abc import abstractmethod
+import copy
+from abc import ABCMeta, abstractmethod
 
 import numpy as np
 import pandas as pd
-from tabcamel.data.transform import CategoryTransform, SimpleImputeTransform
-from tabeval.plugins.core.constraints import Constraints
+import torch
+from tabeval.plugins.core.models.tabular_encoder import TabularEncoder
+from tqdm.auto import tqdm
 
-from src.tabstruct.common.model.BaseModel import BaseModel
-from src.tabstruct.common.runtime.log.TerminalIO import TerminalIO
+from src.tabstruct.common.data.DataHelper import DataHelper
+from src.tabstruct.common.data.DataModule import DataModule
+from src.tabstruct.common.model.BaseModel import BaseLightningModule, BaseModel, LitModelMixin
 
 
-class BaseGenerator(BaseModel):
+class BaseGenerator(BaseModel, metaclass=ABCMeta):
+    """Base class for all generators."""
 
     def __init__(self, args):
         super().__init__(args)
 
-    def generate(self):
+    # ================================================================
+    # =                                                              =
+    # =                      Model fitting                           =
+    # =                                                              =
+    # ================================================================
+    def _fit(self, data_module: DataModule):
+        # === Prepare the training data ===
+        data_df = pd.DataFrame(data_module.X_train, columns=self.args.full_feature_list_processed)
+        if data_module.y_train is not None:
+            data_df[self.args.full_target_col_processed] = data_module.y_train
+
+        # === Prepare the condition ===
+        cond_dict = self._prepare_cond(data_df)
+        self.cond_for_fit = cond_dict["cond_for_fit"]
+        self.cond_for_generation = cond_dict["cond_for_generation"]
+
+        # === Fit the model ===
+        self._fit_model(data_df)
+
+    # ================================================================
+    # =                                                              =
+    # =                   Model generation                           =
+    # =                                                              =
+    # ================================================================
+    def generate(self) -> pd.DataFrame:
         """Generate synthetic samples."""
+        # Each top-level generation call should be reproducible while successive
+        # memory-bounded batches receive distinct random streams.
+        self._generation_seed_offset = 0
+
         # === Compute the generation configurations ===
         # Compute the number of synthetic samples for each class
         class2synthetic_samples = self.compute_class2synthetic_samples()
 
         # === Generate synthetic samples ===
-        synthetic_data_dict = self._generate(class2synthetic_samples)
+        data_syn_df_raw = self._generate(class2synthetic_samples)
 
-        # === Convert the synthetic samples to unified type ===
-        synthetic_data_dict["X_syn"] = np.array(synthetic_data_dict["X_syn"], dtype=np.float32)
-        synthetic_data_dict["y_syn"] = np.array(
-            synthetic_data_dict["y_syn"], dtype=np.int64 if self.args.task == "classification" else np.float32
-        )
+        return data_syn_df_raw
 
-        return synthetic_data_dict
+    def _next_generation_seed(self) -> int | None:
+        """Return a deterministic seed unique to the next generation batch."""
+        seed = getattr(self.args, "seed", None)
+        if seed is None:
+            return None
+
+        offset = getattr(self, "_generation_seed_offset", 0)
+        self._generation_seed_offset = offset + 1
+        return int(seed) + offset
 
     def compute_class2synthetic_samples(self) -> dict:
         """Compute the number of synthetic samples to generate for each class."""
@@ -62,10 +98,10 @@ class BaseGenerator(BaseModel):
         Returns:
             dict: The distribution of synthetic samples to generate for each class
         """
-        if self.args.task == "regression":
+        if self.args.task in ["regression", "unsupervision"]:
             class2synthetic_distribution = {
-                "real": 1,  # Real samples to fit SMOTE/TabEBM
-                "dummy": 0,  # Dummy samples to fit SMOTE/TabEBM
+                "real": 1,  # class for Real samples
+                "dummy": 0,  # Dummy class to skip generation
             }
         else:
             if self.args.generation_mode == "stratified":
@@ -109,415 +145,575 @@ class BaseGenerator(BaseModel):
 
         return class2samples
 
+    # ================================================================
+    # =                                                              =
+    # =              Utils to implement in sub class                 =
+    # =                                                              =
+    # ================================================================
     @abstractmethod
-    def _generate(self, class2synthetic_samples):
+    def _fit_model(self, data: pd.DataFrame | DataModule):
+        raise NotImplementedError("This method has to be implemented by the sub class")
+
+    @abstractmethod
+    def _prepare_cond(self, data_df: pd.DataFrame):
+        raise NotImplementedError("This method has to be implemented by the sub class")
+
+    @abstractmethod
+    def _generate(self, class2synthetic_samples: dict) -> pd.DataFrame:
+        raise NotImplementedError("This method has to be implemented by the sub class")
+
+    @abstractmethod
+    def _generate_model(self, generation_config: dict) -> dict | pd.DataFrame:
+        """Generate samples with original APIs provided by the model."""
+        raise NotImplementedError("This method has to be implemented by the sub class")
+
+    @abstractmethod
+    def _update_generation_config(self, generation_config: dict) -> dict:
         raise NotImplementedError("This method has to be implemented by the sub class")
 
 
 # ================================================================
 # =                                                              =
-# =                        Imblearn                              =
+# =                    Generator Strategy Mixins                 =
 # =                                                              =
 # ================================================================
-class BaseImblearnGenerator(BaseGenerator):
+class JointGenerationMixin:
+    """Mixin for joint generation strategy."""
 
-    def __init__(self, args):
-        super().__init__(args)
-
-
-# ================================================================
-# =                                                              =
-# =                        TabEval                               =
-# =                                                              =
-# ================================================================
-class BaseTabEvalGenerator(BaseGenerator):
-
-    def __init__(self, args):
-        super().__init__(args)
-
-        self.disable_feature_encoding = self.args.categorical_transform == "onehot" and self.args.model not in [
-            "tabddpm"
-        ]
-
-    def _fit(self, data_module):
-        # Some TabEval models has intrinsic data preprocessing, so we should reverse the one-hot encoding for categorical features
-        if self.disable_feature_encoding:
-            train_data_dict = self.format_train_data(data_module)
-        else:
-            train_data_dict = {
-                "X_train": data_module.X_train,
-                "y_train": data_module.y_train,
-            }
-
-        self._fit_tabeval(train_data_dict)
-
-    def format_train_data(self, data_module):
-        # Valid and Test data are not used for training, so we only need to format the training data
-        X_train = pd.DataFrame(data_module.X_train, columns=self.args.full_feature_col_list_processed)
-        y_train = pd.DataFrame(data_module.y_train, columns=[self.args.full_target_col_processed])
-
-        # === Reverse the onehot encoding ===
-        # TabEval does not handle string categories, and thus we need to apply ordinal encoding
-        for scaler_idx, feature_scaler in enumerate(self.args.feature_scaler_list[::-1]):
-            if isinstance(feature_scaler, CategoryTransform):
-                X_train = feature_scaler.inverse_transform(X_train)
-                for i in range(scaler_idx):
-                    if isinstance(self.args.feature_scaler_list[i], SimpleImputeTransform):
-                        X_train = self.args.feature_scaler_list[i].transform(X_train)
-                        break
-
-        # === Apply ordinal encoding ===
-        self.ordinal_feature_scaler = CategoryTransform(
-            categorical_feature_list=feature_scaler.categorical_feature_list,
-            strategy="ordinal",
-        )
-        self.ordinal_feature_scaler.fit(X_train)
-        X_train = self.ordinal_feature_scaler.transform(X_train)
-
-        # === Align the columns of the training data with the original data ===
-        X_train = X_train[self.args.full_feature_col_list_original]
-        y_train = y_train[self.args.full_target_col_original]
-
-        return {
-            "X_train": X_train,
-            "y_train": y_train,
-        }
-
-    def _generate(self, class2synthetic_samples):
-        synthetic_data_dict = self._generate_tabeval(class2synthetic_samples)
-
-        # TabEval has intrinsic data preprocessing, so we should one-hot encode the synthetic data for uniform evaluation
-        if self.disable_feature_encoding:
-            synthetic_data_dict = self.format_synthetic_data(synthetic_data_dict)
-
-        return synthetic_data_dict
-
-    def format_synthetic_data(self, synthetic_data_dict):
-        X_syn = pd.DataFrame(synthetic_data_dict["X_syn"], columns=self.args.full_feature_col_list_original)
-        y_syn = pd.DataFrame(synthetic_data_dict["y_syn"], columns=[self.args.full_target_col_original])
-
-        # === Reverse the ordinal encoding ===
-        if self.ordinal_feature_scaler is not None:
-            X_syn = self.ordinal_feature_scaler.inverse_transform(X_syn)
-
-        # === Apply one-hot encoding ===
-        for feature_scaler in self.args.feature_scaler_list:
-            if isinstance(feature_scaler, CategoryTransform):
-                X_syn = feature_scaler.transform(X_syn)
-
-        # === Align the columns of the synthetic data with the original data ===
-        X_syn = X_syn[self.args.full_feature_col_list_processed]
-        y_syn = y_syn[self.args.full_target_col_processed]
-
-        return {
-            "X_syn": X_syn.to_numpy(),
-            "y_syn": y_syn.to_numpy(),
-        }
-
-    @abstractmethod
-    def _fit_tabeval(self, data_module):
-        raise NotImplementedError("This method has to be implemented by the sub class")
-
-    @abstractmethod
-    def _generate_tabeval(self, class2synthetic_samples):
-        raise NotImplementedError("This method has to be implemented by the sub class")
-
-
-class BaseTabEvalConditionalGenerator(BaseTabEvalGenerator):
-
-    def __init__(self, args):
-        super().__init__(args)
-
-    def _fit_tabeval(self, train_data_dict):
-        data_df = pd.DataFrame(train_data_dict["X_train"])
-        data_df[self.args.full_target_col_processed] = train_data_dict["y_train"]
-
-        # === Prepare the conditions ===
-        cond = self.prepare_cond(train_data_dict)
-        cond_for_fit = cond["cond_for_fit"]
-        self.cond_for_generation = cond["cond_for_generation"]
-
-        # === Fit the model ===
-        self.model.fit(data_df, cond=cond_for_fit)
-
-    def prepare_cond(self, train_data_dict):
-        cond_for_generation = train_data_dict["y_train"]
-
-        if self.args.model in ["great"]:
-            cond_for_fit = self.args.full_target_col_processed
-        elif self.args.model in ["ctgan", "tvae"] and self.args.task == "regression":
-            # CTGAN does not support conditional generation for regression tasks
-            cond_for_fit = None
-            cond_for_generation = None
-        else:
-            # For other models, we need to prepare the condition for generation
-            cond_for_fit = train_data_dict["y_train"]
+    def _prepare_cond(self, data_df):
+        cond_for_fit = None
+        cond_for_generation = None
 
         return {
             "cond_for_fit": cond_for_fit,
             "cond_for_generation": cond_for_generation,
         }
 
-    def _generate_tabeval(self, class2synthetic_samples):
-        X_syn_list = []
-        y_syn_list = []
+    def _generate(self, class2synthetic_samples):
+        # Update the dict every generation
+        class2generated_samples = {}
 
-        for class_id, num_synthetic_samples in class2synthetic_samples.items():
-            num_current_synthetic_samples = 0
-            patience = 0
-            max_patience = num_synthetic_samples // 1000 + 10
+        # === Generate synthetic samples in a GPU-memory-efficient way ===
+        data_syn_temp_list = []
+        num_synthetic_samples = sum(class2synthetic_samples.values())
+        num_current_synthetic_samples = 0
+        patience = 0
+        max_patience = num_synthetic_samples // 1000 + 10
+        progress_bar = tqdm(
+            total=num_synthetic_samples,
+            desc="Generating synthetic samples",
+            unit="samples",
+            leave=True,
+        )
+        try:
             while num_current_synthetic_samples < num_synthetic_samples and patience < max_patience:
                 num_samples_to_generate = num_synthetic_samples - num_current_synthetic_samples
                 num_samples_to_generate = min(num_samples_to_generate, 1000)
 
-                # Compute the generation configurations
-                if self.args.task == "classification":
-                    cond = [class_id] * num_samples_to_generate
-                    constraints = Constraints(
-                        rules=[
-                            (self.args.full_target_col_processed, "==", class_id),
-                            # Note: When `strict=False`, the dtype of the constrained column is set to float by default,
-                            # which may cause issues when performaing matching as the target column is expected to be int for classification tasks.
-                            (self.args.full_target_col_processed, "dtype", "int"),
-                        ]
-                    )
-                else:
-                    cond = self.cond_for_generation
-                    if cond is not None and (not isinstance(cond, str)) and (len(cond) != num_samples_to_generate):
-                        cond = np.resize(cond, num_samples_to_generate)
-                    constraints = None
-
-                syn_data_loader = self.model.generate(
-                    count=num_samples_to_generate,
-                    cond=cond,
-                    constraints=constraints,
+                generation_config = self._update_generation_config(
+                    {
+                        "num_samples_to_generate": num_samples_to_generate,
+                    }
                 )
-                X_syn_temp, y_syn_temp = syn_data_loader.unpack()
-                X_syn_list.append(X_syn_temp)
-                y_syn_list.append(y_syn_temp)
+                data_syn_temp_df = self._generate_model(generation_config)
+                filter_dict = self._filter_generated_data(
+                    data_syn_temp_df,
+                    class2synthetic_samples,
+                    class2generated_samples,
+                )
+                class2generated_samples.update(filter_dict["class2generated_samples"])
+                data_syn_temp_list.append(filter_dict["data_syn_filtered"])
 
-                num_current_synthetic_samples += len(X_syn_temp)
+                generated_batch_size = data_syn_temp_list[-1].shape[0]
+                num_current_synthetic_samples += generated_batch_size
+                progress_bar.update(generated_batch_size)
                 patience += 1
+        finally:
+            # Ensure the progress bar is cleared even if we break early
+            if progress_bar.n < progress_bar.total:
+                progress_bar.update(progress_bar.total - progress_bar.n)
+            progress_bar.close()
 
-            X_syn = pd.concat(X_syn_list).to_numpy()
-            y_syn = pd.concat(y_syn_list).to_numpy()
-            if X_syn.shape[0] < num_synthetic_samples:
-                upsample_index = np.random.choice(X_syn.shape[0], num_synthetic_samples)
-                X_syn = X_syn[upsample_index]
-                y_syn = y_syn[upsample_index]
+        # Concatenate all generated samples
+        data_syn_df = pd.concat(data_syn_temp_list, axis=0, ignore_index=True)
+
+        # Upsample if unenough samples were generated
+        if data_syn_df.shape[0] < num_synthetic_samples:
+            data_syn_df = data_syn_df.sample(
+                num_synthetic_samples,
+                replace=True,
+                random_state=self.args.seed,
+            ).reset_index(drop=True)
+
+        return data_syn_df
+
+    def _filter_generated_data(self, data_syn_df, class2synthetic_samples, class2generated_samples):
+        # For non-classification tasks, return all data without filtering
+        if self.args.task != "classification":
+            return {
+                "data_syn_filtered": data_syn_df,
+                "class2generated_samples": {},
+            }
+
+        filtered_df_list = []
+
+        # Process each class separately
+        for class_id, class_df in data_syn_df.groupby(self.args.full_target_col_processed):
+            # Ensure class exists in generated samples counter
+            current_generated = class2generated_samples.get(class_id, 0)
+
+            # Calculate how many more samples we need for this class
+            samples_needed = class2synthetic_samples[class_id] - current_generated
+
+            if samples_needed > 0:
+                # Take only what we need (or what's available)
+                samples_to_keep = min(len(class_df), samples_needed)
+                filtered_df_list.append(class_df.iloc[:samples_to_keep])
+
+                # Update the counter
+                class2generated_samples[class_id] = current_generated + samples_to_keep
+
+        # Combine all filtered data or return empty DataFrame
+        data_syn_filtered_df = (
+            pd.concat(filtered_df_list, ignore_index=True)
+            if filtered_df_list
+            else pd.DataFrame(columns=data_syn_df.columns)
+        )
 
         return {
-            "X_syn": X_syn,
-            "y_syn": y_syn,
+            "data_syn_filtered": data_syn_filtered_df,
+            "class2generated_samples": class2generated_samples,
         }
 
 
-class BaseTabEvalJointGenerator(BaseTabEvalGenerator):
+class ConditionalGenerationMixin:
+    """Mixin for conditional generation strategy."""
 
-    def __init__(self, args):
-        super().__init__(args)
+    def _prepare_cond(self, data_df):
+        cond_for_fit = None
+        cond_for_generation = None
 
-    def _fit_tabeval(self, train_data_dict):
-        data_df = pd.DataFrame(train_data_dict["X_train"])
-        data_df[self.args.full_target_col_processed] = train_data_dict["y_train"]
-        data_df = self.process_with_corner_case(data_df)
-        self.model.fit(data_df)
-
-    def _generate_tabeval(self, class2synthetic_samples):
-        X_syn = pd.DataFrame()
-        y_syn = pd.Series()
-
-        for class_id, num_synthetic_samples in class2synthetic_samples.items():
-            # Compute the generation configurations
-            constraints = None
-            if self.args.task == "classification":
-                constraints = Constraints(
-                    rules=[
-                        (self.args.full_target_col_processed, "==", class_id),
-                        # Note: When `strict=False`, the dtype of the constrained column is set to float by default,
-                        # which may cause issues when performaing matching as the target column is expected to be int for classification tasks.
-                        (self.args.full_target_col_processed, "dtype", "int"),
-                    ]
-                )
-
-            # Generate synthetic samples for the current class in a GPU-memory-efficient way
-            num_current_synthetic_samples = 0
-            patience = 0
-            max_patience = num_synthetic_samples // 1000 + 10
-            while num_current_synthetic_samples < num_synthetic_samples and patience < max_patience:
-                num_samples_to_generate = num_synthetic_samples - num_current_synthetic_samples
-                num_samples_to_generate = min(num_samples_to_generate, 1000)
-                syn_data_loader = self.model.generate(
-                    count=num_samples_to_generate,
-                    constraints=constraints,
-                )
-                X_syn_temp, y_syn_temp = syn_data_loader.unpack()
-                X_syn = pd.concat([X_syn, X_syn_temp], axis=0)
-                y_syn = pd.concat([y_syn, y_syn_temp], axis=0)
-
-                num_current_synthetic_samples += len(X_syn_temp)
-                patience += 1
-
-            if X_syn.shape[0] < num_synthetic_samples:
-                upsample_index = np.random.choice(X_syn.shape[0], num_synthetic_samples)
-                X_syn = X_syn.iloc[upsample_index]
-                y_syn = y_syn.iloc[upsample_index]
+        if self.args.task != "unsupervision":
+            cond_for_fit = data_df[self.args.full_target_col_processed]
+            cond_for_generation = data_df[self.args.full_target_col_processed]
 
         return {
-            "X_syn": X_syn.to_numpy(),
-            "y_syn": y_syn.to_numpy(),
-        }
-
-    def process_with_corner_case(self, data_df):
-        if self.args.model in ["bn"]:
-            # Discretize all columns to up to 100 bins per column
-            for col in data_df.columns:
-                if self.args.full_feature_col2type_original.get(col, None) == "numerical":
-                    data_df[col] = pd.cut(data_df[col], bins=100, labels=False, duplicates="drop")
-            # BN cannot scale up to more than 10k samples
-            data_df = data_df.loc[:10000, :]
-        elif self.args.model in ["nflow"]:
-            # NFlow is very unstable with more than 2k samples
-            data_df = data_df.loc[:2000, :]
-
-        return data_df
-
-
-class BaseMixedGenerator(BaseGenerator):
-
-    def __init__(self, args):
-        super().__init__(args)
-
-        self.patience_for_generation = 10
-
-    def prepare_data(self, data_module):
-        # === Prepare the data according to feature type ===
-        X_train, y_train = data_module.X_train, data_module.y_train
-        X_valid, y_valid = data_module.X_valid, data_module.y_valid
-
-        # For classification, we save a sample per class to duplicate when the generator cannot generate for some classes.
-        if self.args.task == "classification":
-            example_indices = [np.where(y_train == class_id)[0][0] for class_id in np.unique(y_train)]
-            self.X_train_example = X_train[example_indices, :]
-            self.y_train_example = y_train[example_indices]
-
-        # By default, feature preprocessing will sort all features as numerical -> categorical (stable sort)
-        num_col_count = len(self.args.num_feature_col_list_processed)
-        X_train_num, X_train_cat = X_train[:, :num_col_count], X_train[:, num_col_count:]
-        X_valid_num, X_valid_cat = X_valid[:, :num_col_count], X_valid[:, num_col_count:]
-        if self.args.task == "regression":
-            X_train_num = np.concatenate([X_train_num, y_train.reshape(-1, 1)], axis=1)
-            X_valid_num = np.concatenate([X_valid_num, y_valid.reshape(-1, 1)], axis=1)
-        elif self.args.task == "classification":
-            X_train_cat = np.concatenate([X_train_cat, y_train.reshape(-1, 1)], axis=1)
-            X_valid_cat = np.concatenate([X_valid_cat, y_valid.reshape(-1, 1)], axis=1)
-        X_train_cat = X_train_cat.astype(np.int64)
-        X_valid_cat = X_valid_cat.astype(np.int64)
-
-        # Get the bounds of the numerical features
-        self.num_lower_bound = np.min(X_train_num, axis=0)
-        self.num_upper_bound = np.max(X_train_num, axis=0)
-
-        return {
-            "X_train_num": X_train_num,
-            "X_train_cat": X_train_cat,
-            "X_valid_num": X_valid_num,
-            "X_valid_cat": X_valid_cat,
+            "cond_for_fit": cond_for_fit,
+            "cond_for_generation": cond_for_generation,
         }
 
     def _generate(self, class2synthetic_samples):
-        patience = 0
-        X_syn_df = pd.DataFrame()
-        y_syn_df = pd.DataFrame()
-        while patience < self.patience_for_generation:
-            # === Generate synthetic data ===
-            while X_syn_df.shape[0] < sum(class2synthetic_samples.values()):
-                syn_df_dict = self._generate_single_run()
-                X_syn_df = pd.concat([X_syn_df, syn_df_dict["X_syn_df"]], axis=0)
-                y_syn_df = pd.concat([y_syn_df, syn_df_dict["y_syn_df"]], axis=0)
+        # === Prepare lists to hold synthetic samples ===
+        data_syn_class_df_list = []
+        total_synthetic_samples = sum(class2synthetic_samples.values())
+        progress_bar = tqdm(
+            total=total_synthetic_samples,
+            desc="Generating synthetic samples",
+            unit="samples",
+            leave=True,
+        )
+        try:
+            # === Generate synthetic samples for each class ===
+            for class_id, num_synthetic_samples in class2synthetic_samples.items():
+                data_syn_temp_list = []
 
-            # Re-sampling to satisfy the class2synthetic_samples
-            if self.args.task == "classification":
-                if pd.unique(y_syn_df.iloc[:, -1]).size != len(class2synthetic_samples.keys()):
-                    TerminalIO.print(
-                        f"Warning: The number of classes in the generated data ({pd.unique(y_syn_df.iloc[:, -1]).size}) "
-                        f"does not match the number of classes in the original data ({len(class2synthetic_samples)})",
-                        color=TerminalIO.WARNING,
+                # === Generate synthetic samples for the current class in a GPU-memory-efficient way ===
+                num_current_synthetic_samples = 0
+                patience = 0
+                max_patience = num_synthetic_samples // 1000 + 10
+                while num_current_synthetic_samples < num_synthetic_samples and patience < max_patience:
+                    num_samples_to_generate = num_synthetic_samples - num_current_synthetic_samples
+                    num_samples_to_generate = min(num_samples_to_generate, 1000)
+
+                    generation_config = self._update_generation_config(
+                        {
+                            "class_id": class_id,
+                            "num_samples_to_generate": num_samples_to_generate,
+                        }
                     )
+                    data_syn_temp_df = self._generate_model(generation_config)
+                    data_syn_temp_list.append(data_syn_temp_df)
+
+                    batch_size = len(data_syn_temp_df)
+                    num_current_synthetic_samples += batch_size
+                    progress_bar.update(batch_size)
                     patience += 1
-                    if patience < self.patience_for_generation - 1:
-                        continue
 
-                    TerminalIO.print(
-                        f"Patience {self.patience_for_generation} exceeded. "
-                        f"The model cannot synthesise samples for some classes. Thus we will use example samples instead.",
-                        color=TerminalIO.WARNING,
-                    )
-                    X_syn_df = pd.concat(
-                        [X_syn_df, pd.DataFrame(self.X_train_example, columns=X_syn_df.columns)], axis=0
-                    )
-                    y_syn_df = pd.concat(
-                        [y_syn_df, pd.DataFrame(self.y_train_example, columns=y_syn_df.columns)], axis=0
-                    )
+                # Only consider classes with >0 samples, as empty arrays cannot be concatenated
+                if len(data_syn_temp_list) == 0:
+                    continue
 
-                # Resample the synthetic data
-                X_syn = X_syn_df.to_numpy()
-                y_syn = y_syn_df.to_numpy()
+                # Concatenate all generated samples for the current class
+                data_syn_class_df = pd.concat(data_syn_temp_list, axis=0, ignore_index=True)
 
-                resample_indices = np.concatenate(
-                    [
-                        np.random.choice(np.where(y_syn == class_id)[0], num_synthetic_samples, replace=True)
-                        for class_id, num_synthetic_samples in class2synthetic_samples.items()
-                    ]
-                ).reshape(-1)
-                X_syn = X_syn[resample_indices, :]
-                y_syn = y_syn[resample_indices, :]
-                break
-            else:
-                X_syn = X_syn_df.to_numpy()
-                y_syn = y_syn_df.to_numpy()
-                break
+                # Upsample if unenough samples were generated
+                if data_syn_class_df.shape[0] < num_synthetic_samples:
+                    data_syn_class_df = data_syn_class_df.sample(
+                        num_synthetic_samples,
+                        replace=True,
+                        random_state=self.args.seed,
+                    ).reset_index(drop=True)
 
-        return {
-            "X_syn": X_syn,
-            "y_syn": y_syn,
-        }
+                # Append to the list of all synthetic samples
+                data_syn_class_df_list.append(data_syn_class_df)
+        finally:
+            if progress_bar.n < progress_bar.total:
+                progress_bar.update(progress_bar.total - progress_bar.n)
+            progress_bar.close()
 
-    def _generate_single_run(self):
-        synthetic_data_dict = self._model_generate()
+        # Concatenate all synthetic samples
+        data_syn_df = pd.concat(data_syn_class_df_list, axis=0, ignore_index=True)
 
-        # === Parse the generated data ===
-        syn_num = synthetic_data_dict["syn_num"]
-        syn_cat = synthetic_data_dict["syn_cat"]
+        return data_syn_df
 
-        # Set the bounds of the numerical features
-        syn_num = np.clip(syn_num, self.num_lower_bound, self.num_upper_bound)
 
-        # Parse the target column
-        y_syn = None
-        if self.args.task == "regression":
-            y_syn = syn_num[:, -1]
-            syn_num = syn_num[:, :-1]
-        elif self.args.task == "classification":
-            y_syn = syn_cat[:, -1]
-            syn_cat = syn_cat[:, :-1]
+class ClassFocusedGenerationMixin:
+    """Mixin for joint generation strategy."""
 
-        # Order the columns of generated samples
-        syn_num_df = pd.DataFrame(syn_num, columns=self.args.num_feature_col_list_processed)
-        syn_cat_df = pd.DataFrame(syn_cat, columns=self.args.cat_feature_col_list_processed)
-        y_syn_df = pd.DataFrame(y_syn, columns=[self.args.full_target_col_processed])
-        X_syn_df = pd.concat([syn_num_df, syn_cat_df], axis=1)
+    def _prepare_cond(self, data_df):
+        cond_for_fit = None
+        cond_for_generation = None
 
         return {
-            "X_syn_df": X_syn_df,
-            "y_syn_df": y_syn_df,
+            "cond_for_fit": cond_for_fit,
+            "cond_for_generation": cond_for_generation,
         }
+
+    def _fit(self, data_module):
+        # === Save the data ===
+        if self.args.task == "classification":
+            self.X_train = data_module.X_train
+            self.y_train = data_module.y_train
+        elif self.args.task == "regression":
+            self.X_train = np.concatenate([data_module.X_train, data_module.y_train.reshape(-1, 1)], axis=1)
+            # The samples are sorted by class id (0->real data, 1->dummy data)
+            self.y_train = np.zeros(self.X_train.shape[0], dtype=np.int64)
+        elif self.args.task == "unsupervision":
+            self.X_train = data_module.X_train
+            # The samples are sorted by class id (0->real data, 1->dummy data)
+            self.y_train = np.zeros(self.X_train.shape[0], dtype=np.int64)
+
+        self._fit_model(data_module)
+
+    def _generate(self, class2synthetic_samples):
+        # Generate synthetic samples with original APIs provided by the model
+        synthetic_data_dict = self._generate_model(class2synthetic_samples)
+
+        # Create a dataframe from the synthetic data
+        data_syn_df = pd.DataFrame(synthetic_data_dict["X_syn"], columns=self.args.full_feature_list_processed)
+        if self.args.task != "unsupervision":
+            data_syn_df[self.args.full_target_col_processed] = synthetic_data_dict["y_syn"]
+
+        return data_syn_df
+
+    def _update_generation_config(self, generation_config: dict) -> dict:
+        return generation_config
+
+
+# ================================================================
+# =                                                              =
+# =                 TabStruct Generator Classes                  =
+# =                                                              =
+# ================================================================
+class BaseJointGenerator(JointGenerationMixin, BaseGenerator):
+    """Base class for joint generators (non-TabEval)."""
+
+    def __init__(self, args):
+        super().__init__(args)
+
+
+class BaseConditionalGenerator(ConditionalGenerationMixin, BaseGenerator):
+    """Base class for conditional generators (non-TabEval)."""
+
+    def __init__(self, args):
+        super().__init__(args)
+
+
+class BaseClassFocusedGenerator(ClassFocusedGenerationMixin, BaseGenerator):
+    """Generators initially designed for classification tasks.
+    We further extend them to be applicable for other tasks like regression and unsupervision.
+    """
+
+    def __init__(self, args):
+        super().__init__(args)
+
+
+# ================================================================
+# =                                                              =
+# =                    TabEval Generator Classes                 =
+# =                                                              =
+# ================================================================
+class TabEvalGenerationMixin:
+    """Mixin for TabEval-specific functionality."""
+
+    def _fit_model(self, data_df):
+        """TabEval-specific model fitting."""
+        self.model.fit(data_df, cond=self.cond_for_fit)
+
+    def _generate_model(self, generation_config: dict):
+        syn_data_loader = self.model.generate(
+            count=generation_config["num_samples_to_generate"],
+            cond=generation_config["cond_for_generation"],
+        )
+        data_syn_temp_df = syn_data_loader.dataframe()
+
+        return data_syn_temp_df
+
+    @classmethod
+    def _get_model_specific_scaler_config(cls):
+        """Get TabEval-specific scaler configuration."""
+        scaler_config_dict = {
+            "context": {
+                # Though TabEval has inherent data preprocessing strategies, they are limited and fragile
+                # Thus, we still need basic preprocessing in the pipeline
+                "disable_preprocessing": False,
+            },
+            "feature_scaler": {
+                "categorical_transform": "ordinal",
+                "categorical_as_numerical": False,
+            },
+            "target_scaler": {},
+        }
+
+        return scaler_config_dict
+
+
+class BaseTabEvalJointGenerator(JointGenerationMixin, TabEvalGenerationMixin, BaseGenerator):
+    """TabEval generator with joint generation strategy."""
+
+    def __init__(self, args):
+        super().__init__(args)
+
+    def _update_generation_config(self, generation_config: dict) -> dict:
+        generation_config = {
+            "num_samples_to_generate": generation_config["num_samples_to_generate"],
+            "cond_for_generation": None,
+        }
+
+        return generation_config
+
+
+class BaseTabEvalConditionalGenerator(ConditionalGenerationMixin, TabEvalGenerationMixin, BaseGenerator):
+    """TabEval generator with conditional generation strategy."""
+
+    def __init__(self, args):
+        super().__init__(args)
+
+    def _update_generation_config(self, generation_config: dict) -> dict:
+        # Parse generation conditions
+        cond_for_generation = self._update_generation_cond(
+            generation_config["class_id"], generation_config["num_samples_to_generate"]
+        )
+
+        # Update generation config
+        generation_config = {
+            "num_samples_to_generate": generation_config["num_samples_to_generate"],
+            "cond_for_generation": cond_for_generation,
+        }
+
+        return generation_config
+
+    def _update_generation_cond(self, class_id, num_samples_to_generate):
+        cond_for_generation = self.cond_for_generation
+        if self.args.task == "classification":
+            cond_for_generation = [class_id] * num_samples_to_generate
+        else:
+            cond_for_generation = self.cond_for_generation
+            if (
+                cond_for_generation is not None
+                and (not isinstance(cond_for_generation, str))
+                and (len(cond_for_generation) != num_samples_to_generate)
+            ):
+                cond_for_generation = np.resize(cond_for_generation, num_samples_to_generate)
+
+        return cond_for_generation
+
+
+# ================================================================
+# =                                                              =
+# =               Pytorch Lightning Generator Classes            =
+# =                                                              =
+# ================================================================
+class LitGenerationMixin:
+    # ================================================================
+    # =                                                              =
+    # =                        General                               =
+    # =                                                              =
+    # ================================================================
+    def _fit(self, data_module):
+        # Build the trainer
+        trainer = self.create_lit_trainer()
+
+        # Model-specific preparations before fitting the model, such as preprocessing the data etc.
+        data_module_dict = self._prepare_data_module(data_module)
+        DataHelper.log_data_properties_runtime(self.args, data_module_dict, stage="model")
+
+        # Train the model
+        data_module = data_module_dict["data_module"]
+        self.train_lit_model(data_module, trainer)
+
+        # Model-specific special operations for fitting the model, such as saving the embeddings etc.
+        self._fit_model(data_module)
+
+    # ================================================================
+    # =                                                              =
+    # =                     Model-specific                           =
+    # =                                                              =
+    # ================================================================
+    def _prepare_data_module(self, data_module):
+        return {
+            "data_module": data_module,
+            "feature_scaler": None,
+            "target_scaler": None,
+        }
+
+    def _fit_model(self, data_module):
+        pass
+
+
+class BaseLitJointGenerator(LitGenerationMixin, JointGenerationMixin, LitModelMixin, BaseGenerator):
+    """Base class for all PyTorch Lightning models used in the generation task with joint generation strategy.
+    This class provides a common interface for training, validation, and testing of lightning models.
+    """
+
+    def __init__(self, args):
+        super().__init__(args)
+
+    def _update_generation_config(self, generation_config):
+        generation_config = {
+            "num_samples_to_generate": generation_config["num_samples_to_generate"],
+        }
+
+        return generation_config
+
+    # ================================================================
+    # =                                                              =
+    # =                     Model-specific                           =
+    # =                                                              =
+    # ================================================================
+    def _prepare_data_module(self, data_module):
+        # Deep copy the data module to avoid changing the original one
+        data_module = copy.deepcopy(data_module)
+
+        # === Prepare the data scalers ===
+        self._prepare_data_scalers()
+
+        # === Encode the features ===
+        self.feature_scaler = self.feature_scaler.fit(data_module.X_train_df)
+        data_module.X_train_df = self.feature_scaler.transform(data_module.X_train_df)
+        data_module.X_valid_df = self.feature_scaler.transform(data_module.X_valid_df)
+        data_module.X_test_df = self.feature_scaler.transform(data_module.X_test_df)
+
+        # === Encode the target ===
+        if self.args.task != "unsupervision":
+            self.target_scaler = self.target_scaler.fit(data_module.y_train_df)
+            data_module.y_train_df = self.target_scaler.transform(data_module.y_train_df)
+            data_module.y_valid_df = self.target_scaler.transform(data_module.y_valid_df)
+            data_module.y_test_df = self.target_scaler.transform(data_module.y_test_df)
+
+        return {
+            "data_module": data_module,
+            "feature_scaler": self.feature_scaler,
+            "target_scaler": self.target_scaler,
+        }
+
+    def _prepare_data_scalers(self):
+        # Feature scaler
+        self.feature_scaler = TabularEncoder(categorical_encoder="onehot", continuous_encoder="bayesian_gmm")
+
+        # Target scaler
+        self.target_scaler = None
+        if self.args.task != "unsupervision":
+            self.target_scaler = TabularEncoder(categorical_encoder="onehot", continuous_encoder="bayesian_gmm")
+
+    def _fit_model(self, data_module):
+        pass
+
+    def _generate_model(self, generation_config):
+        # Generate synthetic samples according to the config
+        data_syn_df = self.model.generate(
+            num_samples=generation_config["num_samples_to_generate"],
+        )
+        data_syn_df = pd.DataFrame(data_syn_df.detach().cpu())
+
+        # Post-process the generated samples to original format
+        data_syn_df = self._postprocess_generated_data(data_syn_df)
+
+        return data_syn_df
+
+    def _postprocess_generated_data(self, data_syn_df):
+        X_syn_df = data_syn_df
+        y_syn_df = None
+        if self.args.task != "unsupervision":
+            count_features = self.feature_scaler.n_features()
+            X_syn_df = data_syn_df.iloc[:, :count_features]
+            y_syn_df = data_syn_df.iloc[:, count_features:]
+
+        data_syn_df = self.feature_scaler.inverse_transform(X_syn_df)
+        if self.args.task != "unsupervision":
+            y_syn_df = self.target_scaler.inverse_transform(y_syn_df)
+            data_syn_df = pd.concat([data_syn_df, y_syn_df], axis=1)
+
+        return data_syn_df
+
+
+class BaseLightningGenerationModule(BaseLightningModule, metaclass=ABCMeta):
+    """Base class for all PyTorch Lightning models used in the generation task.
+    This class provides a common interface for training, validation, and testing of lightning models.
+    """
+
+    def __init__(self, args):
+        super().__init__(args)
+
+    # ================================================================
+    # =                                                              =
+    # =                         General                              =
+    # =                                                              =
+    # ================================================================
+    def _step(self, X, y_true):
+        data_real = X
+        if self.args.task != "unsupervision":
+            # If y_true is 1D, convert to 2D for concatenation
+            y_true = y_true.unsqueeze(1) if len(y_true.shape) == 1 else y_true
+            data_real = torch.cat([X, y_true], dim=1)
+
+        # Generate synthetic data
+        forward_dict = self.torch_model(data_real)
+
+        # Compute losses
+        loss_dict = self.compute_loss(data_real, forward_dict)
+
+        return {
+            "total_loss": loss_dict["total_loss"],
+            "loss_dict": loss_dict,
+        }
+
+    def _compute_metric(self, step_dict_list):
+        metric_dict = {}
+
+        return metric_dict
+
+    def generate(self, num_samples: int) -> torch.Tensor:
+        return self._generate(num_samples)
+
+    # ================================================================
+    # =                                                              =
+    # =                     Model-specific                           =
+    # =                                                              =
+    # ================================================================
+    @abstractmethod
+    def _create_torch_model(self):
+        """Creates the PyTorch model.
+
+        Args:
+            args (Namespace): The arguments for the model.
+        """
+        raise NotImplementedError("This method has to be implemented by the sub class")
 
     @abstractmethod
-    def _model_generate(self):
-        """Generate synthetic data using a specific model.
+    def _compute_loss(self, data_real: torch.Tensor, forward_dict: dict):
+        raise NotImplementedError("This method has to be implemented by the sub class")
 
-        Returns:
-            dict: The generated synthetic data
-        """
+    @abstractmethod
+    def _generate(self, num_samples: int) -> torch.Tensor:
         raise NotImplementedError("This method has to be implemented by the sub class")

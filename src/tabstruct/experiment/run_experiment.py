@@ -1,5 +1,4 @@
 import wandb
-
 from src.tabstruct.common.runtime.config.env import setup_runtime
 from src.tabstruct.common.runtime.error.ManualStopError import ManualStopError
 from src.tabstruct.common.runtime.log.TerminalIO import TerminalIO

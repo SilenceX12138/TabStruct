@@ -6,19 +6,15 @@
 
 # -- Path setup --------------------------------------------------------------
 
-# If extensions (or modules to document with autodoc) are in another directory,
-# add these directories to sys.path here. If the directory is relative to the
-# documentation root, use os.path.abspath to make it absolute, like shown here.
-#
-import os
+# Add the repository root for the public src.tabstruct module imports.
 import re
 import sys
 from pathlib import Path
 
-sys.path.insert(0, os.path.abspath("../../src"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 
-def get_version_from_pyproject():
+def get_version_from_pyproject() -> str:
     """Read version from pyproject.toml file using regex parsing."""
     pyproject_path = Path(__file__).parent.parent.parent / "pyproject.toml"
     try:
@@ -69,7 +65,7 @@ templates_path = ["_templates"]
 # List of patterns, relative to source directory, that match files and
 # directories to ignore when looking for source files.
 # This pattern also affects html_static_path and html_extra_path.
-exclude_patterns = ["_build", "Thumbs.db", ".DS_Store"]
+exclude_patterns = ["_build", "Thumbs.db", ".DS_Store", "**/framework_model.drawio"]
 
 # -- Options for HTML output -------------------------------------------------
 
@@ -84,9 +80,10 @@ htmlhelp_basename = "mainDoc"
 
 html_theme_options = {
     "repository_url": "https://github.com/SilenceX12138/TabStruct.git",
-    "path_to_docs": "",
+    "path_to_docs": "docs/wiki",
     "repository_branch": "master",
     "use_repository_button": True,
+    "show_navbar_depth": 2,
     "launch_buttons": {
         "colab_url": "https://colab.research.google.com/",
     },
@@ -95,7 +92,9 @@ html_theme_options = {
 # Add any paths that contain custom static files (such as style sheets) here,
 # relative to this directory. They are copied after the builtin static files,
 # so a file named "default.css" will overwrite the builtin "default.css".
-html_static_path = ["_static", "_media"]
+html_static_path = ["_media"]
+html_css_files = ["docs.css"]
+html_js_files = ["docs.js"]
 
 # -- Extension configuration -------------------------------------------------
 

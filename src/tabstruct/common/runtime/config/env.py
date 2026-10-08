@@ -61,3 +61,13 @@ def seed_everything(args):
     L.seed_everything(seed, workers=True)
 
     return seed
+
+
+def distributed_rank() -> int | None:
+    """Return the active distributed rank, or None for one process."""
+    if not torch.distributed.is_available() or not torch.distributed.is_initialized():
+        return None
+    if torch.distributed.get_world_size() <= 1:
+        return None
+
+    return torch.distributed.get_rank()

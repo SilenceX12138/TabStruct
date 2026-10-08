@@ -34,6 +34,10 @@ class PredictorHelper(BaseModelHelper):
                 from .sklearn.TabPFN import TabPFN
 
                 model_class = TabPFN
+            case "tabforge":
+                from .sklearn.TabFORGE import TabFORGE
+
+                model_class = TabFORGE
             case "mlp-sklearn":
                 from .sklearn.MLPSklearn import MLPSklearn
 

@@ -1,9 +1,9 @@
 from tabeval.plugins.generic.plugin_tvae import TVAEPlugin
 
-from ..BaseGenerator import BaseTabEvalConditionalGenerator
+from ..BaseGenerator import BaseTabEvalJointGenerator
 
 
-class TVAE(BaseTabEvalConditionalGenerator):
+class TVAE(BaseTabEvalJointGenerator):
 
     def __init__(self, args):
         """Note: TVAE only supports categorical features as conditional variables."""

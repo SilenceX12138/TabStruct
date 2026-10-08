@@ -1,10 +1,10 @@
 import os
 import time
+from typing import Any
 
 import pandas as pd
-from lightning.pytorch.loggers import WandbLogger
-
 import wandb
+from lightning.pytorch.loggers import WandbLogger
 
 from ... import LOG_DIR, WANDB_ENTITY, WANDB_PROJECT
 
@@ -18,23 +18,24 @@ class WandbHelper:
     # =                                                              =
     # ================================================================
     @classmethod
-    def setup_wandb(cls, args):
+    def setup_wandb(cls, args: Any) -> WandbLogger:
         """Set up the wandb tracking.
 
         Args:
             args (argparse.Namespace): The parsed arguments.
 
         """
+        rank = int(os.environ.get("RANK", "0"))
+        disabled = args.disable_wandb or rank != 0
+        settings = wandb.Settings(quiet=True, mode="disabled" if disabled else "online")
+
         # === Intialise wandb logging ===
         wandb_logger = WandbLogger(
             entity=WANDB_ENTITY,
             project=WANDB_PROJECT,
             tags=args.tags,
             log_model=args.wandb_log_model,
-            settings=wandb.Settings(
-                start_method="thread",
-                quiet=True,
-            ),
+            settings=settings,
             save_dir=LOG_DIR,
         )
 
@@ -45,15 +46,12 @@ class WandbHelper:
         # For others, we need to call wandb.init() to create the run. But it may cause warning of duplicate runs for logger.
         # Therefore, we initialise the run here with wandb_logger to avoid the warning.
         # This allows other models to use wandb to log results as well.
-        wandb.init(**wandb_logger._wandb_init)
+        init_args = dict(wandb_logger._wandb_init)
+        init_args.pop("anonymous", None)
+        wandb.init(**init_args)
 
         # Rename the run
         wandb.run.name = cls.get_run_name(args)
-
-        # === Disable wandb when required ===
-        if args.disable_wandb:
-            # The logger is still inisitalised but not used
-            os.environ["WANDB_MODE"] = "disabled"
 
         # Only add a string attribute when logging args, so that it does not increase the memory usage greatly
         return wandb_logger

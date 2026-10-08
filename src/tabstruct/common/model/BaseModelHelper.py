@@ -1,6 +1,7 @@
 import os
 from abc import abstractmethod
 from pathlib import Path
+from typing import Any
 
 import torch
 import torch.nn as nn
@@ -8,7 +9,9 @@ import wandb
 from thop import profile
 
 from src.tabstruct.common.data.DataHelper import DataHelper
-from src.tabstruct.common.runtime.config.argument import fix_tentative_training_args
+from src.tabstruct.common.runtime.config.argument import (fix_tentative_data_preprocessing_args,
+                                                          fix_tentative_training_args)
+from src.tabstruct.common.runtime.config.env import distributed_rank
 from src.tabstruct.common.runtime.log.WandbHelper import WandbHelper
 
 from .. import LOG_DIR, WANDB_PROJECT
@@ -37,9 +40,11 @@ class BaseModelHelper:
         Returns:
             dict: The training, validation, and test metrics.
         """
+        # === Define model class ===
+        args.model_class = cls.model_handler(args.model)
+
         # === Prepare data and fix tentative arguments ===
-        data_module = DataHelper.create_data_module(args)
-        fix_tentative_training_args(args)
+        data_module = cls.prepare_data(args)
 
         # === Fit the model ===
         model = cls.fit_model(args, data_module)
@@ -48,6 +53,28 @@ class BaseModelHelper:
         metric_dict = cls.eval_model(args, data_module, model)
 
         return metric_dict
+
+    @classmethod
+    @WandbHelper.trace_time(summary_key="computation/prepare_data_duration")
+    @TerminalIO.trace_func
+    def prepare_data(cls, args):
+        """Prepare the data for training and evaluation.
+
+        Args:
+            args (Namespace): The arguments for the experiment.
+
+        Returns:
+            DataModule: The prepared data module.
+        """
+        # Define model-specific scalers
+        scaler_config_dict = args.model_class.get_model_specific_scaler_config()
+        fix_tentative_data_preprocessing_args(args, scaler_config_dict)
+
+        # Create the data module
+        data_module = DataHelper.create_data_module(args)
+        fix_tentative_training_args(args)
+
+        return data_module
 
     @classmethod
     @WandbHelper.trace_time(summary_key="computation/fit_duration")
@@ -68,13 +95,7 @@ class BaseModelHelper:
 
         # === Fit the model ===
         # Prepare the model
-        # Try loading checkpoint except those who store all data
-        if args.saved_checkpoint_path and args.model not in cls.non_trainable_model_list:
-            model = cls.load_model(args.saved_checkpoint_path)
-            # Note that the args in model is deprecated and thus we reload the new args
-            model.args = args
-        else:
-            model = cls.create_model(args)
+        model = cls.create_model(args)
 
         # Get fitted model for evaluation
         if not args.eval_only or args.model in cls.non_trainable_model_list:
@@ -97,16 +118,25 @@ class BaseModelHelper:
         Returns:
             BaseModel: The model instance.
         """
-        # === Select the model class ===
-        model_class = cls._model_handler(args.model)
+        # === Define model class ===
+        if not hasattr(args, "model_class"):
+            args.model_class = cls.model_handler(args.model)
 
         # === Define the model parameters ===
         # Only define the model parameters when it is not provided
         if not hasattr(args, "model_params"):
-            args.model_params = model_class.define_params(reg_test=args.reg_test, dev="dev" in args.tags)
+            args.model_params = args.model_class.define_params(reg_test=args.reg_test, dev="dev" in args.tags)
+
+        # Try loading checkpoint except those who store all data
+        if args.saved_checkpoint_path and args.model not in cls.non_trainable_model_list:
+            model = cls.load_model(args.saved_checkpoint_path)
+            # Note that the args in model is deprecated and thus we reload the new args
+            model.args = args
+        else:
+            model = args.model_class(args)
 
         # === Create the model ===
-        return model_class(args)
+        return model
 
     @classmethod
     def model_handler(cls, model):
@@ -125,7 +155,7 @@ class BaseModelHelper:
     @classmethod
     @WandbHelper.trace_time(summary_key="computation/eval_duration")
     @TerminalIO.trace_func
-    def eval_model(cls, args, data_module, model):
+    def eval_model(cls, args: Any, data_module: Any, model: Any) -> dict[str, Any]:
         """Evaluate a scikit-learn style model.
 
         Args:
@@ -139,12 +169,28 @@ class BaseModelHelper:
         Returns:
             dict: The training, validation, and test metrics.
         """
-        metric_dict = cls._eval_model(args, data_module, model)
+        rank = distributed_rank()
+        if rank is None:
+            return cls._eval_model(args, data_module, model)
 
-        return metric_dict
+        # Every rank participates in model inference. Rank zero then owns the
+        # serial benchmark, artifact writes, and experiment logging.
+        if rank == 0:
+            metric_dict = cls._eval_model(args, data_module, model)
+        else:
+            if model is not None:
+                cls.inference(data_module, model)
+            metric_dict = {}
+
+        metrics = [metric_dict]
+        torch.distributed.broadcast_object_list(metrics, src=0)
+
+        return metrics[0]
 
     @classmethod
     @WandbHelper.trace_time(summary_key="computation/inference_duration")
+    @TerminalIO.trace_func
+    @torch.no_grad()
     def inference(cls, data_module, model):
         """Inference of the model.
 
@@ -155,6 +201,10 @@ class BaseModelHelper:
         Returns:
             dict: The inference results.
         """
+        # Set the model to evaluation mode
+        model.eval()
+
+        # Inference
         inference_dict = cls._inference(data_module, model)
 
         return inference_dict

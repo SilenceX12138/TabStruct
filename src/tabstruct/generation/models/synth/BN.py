@@ -15,7 +15,6 @@ class BN(BaseTabEvalJointGenerator):
             struct_learning_n_iter=args.model_params["optimization"]["struct_learning_n_iter"],
             struct_learning_score=args.model_params["optimization"]["struct_learning_score"],
             # Misc.
-            strict=False,
         )
 
     @classmethod

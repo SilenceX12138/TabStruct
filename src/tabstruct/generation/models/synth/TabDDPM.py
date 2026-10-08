@@ -17,7 +17,6 @@ class TabDDPM(BaseTabEvalConditionalGenerator):
             num_timesteps=args.model_params["optimization"]["num_timesteps"],
             # Misc
             is_classification=(args.task == "classification"),
-            strict=False,
         )
 
     @classmethod
@@ -83,3 +82,18 @@ class TabDDPM(BaseTabEvalConditionalGenerator):
             "architecture": params_arch,
             "optimization": params_optim,
         }
+
+    @classmethod
+    def _get_model_specific_scaler_config(cls):
+        scaler_config_dict = {
+            "context": {
+                "disable_preprocessing": False,
+            },
+            "feature_scaler": {
+                "categorical_transform": "ordinal",
+                "categorical_as_numerical": False,
+            },
+            "target_scaler": {},
+        }
+
+        return scaler_config_dict

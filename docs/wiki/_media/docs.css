@@ -1,0 +1,115 @@
+/* Article and component styles within the existing Sphinx Book Theme. */
+html[data-theme="light"] {
+  --pst-color-primary: #3459d9;
+  --pst-color-secondary: #3459d9;
+  --doc-hero-bg: linear-gradient(120deg, #f5f8ff, #e7efff 65%, #f2f3ff);
+  --doc-art-bg: #edf3ff;
+}
+html[data-theme="dark"] {
+  --pst-color-primary: #9bb3ff;
+  --pst-color-secondary: #9bb3ff;
+  --doc-hero-bg: linear-gradient(120deg, #171e2b, #1d2d49 65%, #242a42);
+  --doc-art-bg: #202d43;
+}
+.bd-article { font-size: 1rem; line-height: 1.65; }
+.bd-article h1, .bd-article h2, .bd-article h3 { font-weight: 600; }
+.bd-article h1 { font-size: 2.25rem; }
+.bd-article h2 { font-size: 1.75rem; }
+.bd-article h3 { font-size: 1.375rem; }
+.bd-article img { max-width: 100%; height: auto; }
+html[data-theme] .bd-article img[src$=".svg"] { background: transparent; filter: none; padding: 0; }
+.bd-article figure:has(img[src$="workflow.svg"]) > a { display: block; max-width: 100%; overflow-x: auto; border: 1px solid var(--pst-color-border); border-radius: 10px; background: var(--doc-art-bg); }
+.bd-article figure img[src$="workflow.svg"] { width: 100%; min-width: 900px; max-width: none; }
+.bd-article a.headerlink { font-size: .7em; }
+
+/* A single homepage banner contains the project identity and shared workflow. */
+body:has(.home-banner) .bd-sidebar-primary .navbar-brand,
+.bd-main:has(.home-banner) .bd-sidebar-secondary,
+.bd-main:has(.home-banner) .secondary-toggle,
+.bd-article:has(.home-banner) > section > h1 { display: none; }
+.bd-main:has(.home-banner) .bd-article-container { max-width: 1100px; width: 100%; }
+.bd-article .home-banner {
+  padding: 32px;
+  margin: 12px 0 32px;
+  background: var(--doc-hero-bg);
+  border: 1px solid var(--pst-color-border);
+  border-radius: 10px;
+}
+.bd-article .banner-title { max-width: 78ch; }
+.bd-article .banner-title h1 { margin: 0 0 4px; font-size: 3rem; font-weight: 700; letter-spacing: -.02em; }
+.brand-tab { color: #198ea5; }
+.brand-struct { color: #f56a25; }
+html[data-theme="dark"] .brand-tab { color: #58c9dc; }
+html[data-theme="dark"] .brand-struct { color: #ff9b65; }
+.bd-article .hero-subtitle { margin: 0 0 24px; color: var(--pst-color-text-muted); font-size: 1.25rem; }
+.bd-article .banner-title h2 { margin: 0 0 16px; font-size: 1.75rem; line-height: 1.3; }
+.bd-article .hero-description { margin: 0 0 12px; }
+.bd-article .hero-ecosystem { margin: 0 0 24px; }
+.bd-article a[href="https://github.com/SilenceX12138/TabCamel"],
+.bd-article a[href="https://github.com/SilenceX12138/TabEval"] { font-weight: 600; }
+.bd-article .home-banner .workflow-figure { margin: 28px 0 0; padding: 0; }
+.bd-article .home-banner .workflow-figure figcaption { margin-top: 12px; padding: 0; color: var(--pst-color-text-muted); font-size: .875rem; text-align: left; }
+.bd-article .home-actions { display: flex; flex-wrap: wrap; gap: 10px; margin: 0; }
+.bd-article a.doc-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  min-height: 44px;
+  padding: 9px 18px;
+  border: 1px solid var(--pst-color-border);
+  border-radius: 6px;
+  font-weight: 600;
+  text-decoration: none;
+}
+.bd-article a.doc-button.primary { color: #fff; background: #3459d9; border-color: #3459d9; }
+.bd-article a.doc-button.secondary { color: var(--pst-color-text-base); background: var(--pst-color-background); }
+.bd-article a.doc-button:hover { box-shadow: 0 2px 8px #3459d920; }
+.bd-article a.doc-button:focus-visible { outline: 2px solid var(--pst-color-primary); outline-offset: 3px; }
+
+/* Illustrated cards share aligned text, artwork, and example links. */
+.bd-article .task-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; margin: 24px 0 32px; }
+.bd-article .task-card { display: flex; flex-direction: column; min-width: 0; overflow: hidden; border: 1px solid var(--pst-color-border); border-radius: 8px; background: var(--pst-color-background); }
+.bd-article .task-card-body { flex: 1; padding: 20px; }
+.bd-article .task-card h3 { margin: 0 0 12px; font-size: 1.25rem; line-height: 1.35; }
+.bd-article .task-card p { margin: 0 0 12px; font-size: .94rem; }
+.bd-article .task-card .task-scenario { color: var(--pst-color-text-muted); font-size: .875rem; }
+.bd-article .task-api { font-size: .875rem; text-decoration: none; }
+.bd-article .task-art { display: flex; align-items: center; justify-content: center; min-height: 152px; padding: 16px 20px; background: var(--doc-art-bg); }
+.bd-article .task-art img { display: block; width: 240px; height: auto; }
+.bd-article .task-examples { display: flex; align-items: center; justify-content: space-between; min-height: 48px; padding: 12px 20px; border-top: 1px solid var(--pst-color-border); font-size: .9rem; font-weight: 600; text-decoration: none; }
+.bd-article .task-examples:hover { background: var(--pst-color-surface); }
+.bd-article .tutorial-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+
+/* Keep prose identifiers readable and large tables inside their own scrollers. */
+.bd-article :not(pre) > code.literal { padding: .1em .3em; color: var(--pst-color-text-base); background: var(--pst-color-surface); border: 0; border-radius: 4px; white-space: normal; overflow-wrap: anywhere; }
+.bd-article :not(pre) > code.literal > span.pre { white-space: normal; }
+.bd-article table code.literal, .bd-article table code.literal > span.pre { white-space: nowrap; }
+.bd-article .pst-scrollable-table-container { margin: 20px 0 28px; border: 1px solid var(--pst-color-border); border-radius: 6px; }
+.bd-article .pst-scrollable-table-container:has(code.literal) table { min-width: 640px; }
+.bd-article table { margin: 0; font-size: .9rem; }
+.bd-article table th, .bd-article table td { padding: 10px 14px; vertical-align: top; }
+.bd-article table thead { background: var(--pst-color-surface); }
+.bd-article dt.sig { max-width: 100%; overflow-x: auto; padding: 10px 12px; border-radius: 5px; }
+.bd-article dt.sig .sig-name { color: var(--pst-color-primary); }
+.bd-article dl.py { margin-bottom: 24px; }
+
+/* Code labels and copy controls stay clear of the example text. */
+[class*="highlight-"] { position: relative; }
+.code-language { position: absolute; top: 10px; left: 16px; color: var(--pst-color-text-muted); font-size: .75rem; }
+.code-copy { position: absolute; right: 8px; top: 7px; min-height: 32px; padding: 3px 10px; border: 1px solid var(--pst-color-border); border-radius: 5px; color: var(--pst-color-text-base); background: var(--pst-color-surface); font-size: .8rem; }
+.code-copy:focus-visible { outline: 2px solid var(--pst-color-primary); outline-offset: 2px; }
+.bd-article div.highlight pre { padding: 44px 16px 16px; line-height: 1.5; }
+.bd-article div.highlight { border: 1px solid var(--pst-color-border); border-radius: 6px; }
+
+@media (max-width: 1100px) {
+  .bd-article .task-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 650px) {
+  .bd-article .task-grid { grid-template-columns: 1fr; }
+  .bd-article .home-banner { padding: 20px; }
+  .bd-article .banner-title h1 { font-size: 2.625rem; }
+  .bd-article .banner-title h2 { font-size: 1.5rem; }
+  .bd-article h1 { font-size: 1.9rem; }
+  .bd-article .task-card-body { padding: 18px; }
+}

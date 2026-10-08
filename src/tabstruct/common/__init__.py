@@ -28,14 +28,26 @@ SINGLE_RUN_TIMEOUT = 3600 * 2
 # ================================================================
 # change the name to launch a new W&B project
 WANDB_ENTITY = "tabular-foundation-model"
-WANDB_PROJECT = "Euphratica-dev"
+WANDB_PROJECT = "Kittens-dev"
 
 # ================================================================
 # =                                                              =
-# =                      Data setup                              =
+# =                       Env setup                              =
 # =                                                              =
 # ================================================================
+# arm64 architecture may have issues with OpenBLAS using too many threads
+os.environ["OPENBLAS_NUM_THREADS"] = "1"
 
+# ================================================================
+# =                                                              =
+# =                    Metric setup                              =
+# =                                                              =
+# ================================================================
+metric_to_maximize_list = [
+    "balanced_accuracy",
+    "density_high_order_alpha_precision",
+    "r2",
+]
 
 # ================================================================
 # =                                                              =
@@ -50,6 +62,7 @@ predictior_list = [
     "xgb",
     "tabnet",
     "tabpfn",
+    "tabforge",
     "mlp-sklearn",
     # lit
     "mlp",
@@ -59,6 +72,7 @@ predictior_list = [
 generator_list = [
     # Real data
     "real",
+    "real-test",
     # imblearn
     "smote",
     # tabeval
@@ -69,7 +83,26 @@ generator_list = [
     "tabddpm",
     "arf",
     "nflow",
+    # custom
+    "tabebm",
     "great",
+    "nrgboost",
+    "tabular-argn",
+    "ae",
+    "vae",
+    "ddpm",
+    "tddpm",
+    "tabdiff",
+    "vesde",
+    "vpsde",
+    "edm",
+    "tabsyn",
+    # exploration
+    "lae",
+    "lfm",
+    "lfdm",
+    "lfdm-trans",
+    "tabforge",
 ]
 
 unstable_generator_list = [
@@ -78,6 +111,12 @@ unstable_generator_list = [
     "nflow",
     "goggle",
     "great",
+]
+
+manual_optimizer_model_list = [
+    "tabsyn",
+    "lfdm",
+    "lfdm-trans",
 ]
 
 model_to_do_list = []

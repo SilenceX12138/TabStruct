@@ -3,23 +3,18 @@ from imblearn.over_sampling import SMOTE as ImlearnSMOTE
 
 from src.tabstruct.common.runtime.error.ManualStopError import ManualStopError
 
-from ..BaseGenerator import BaseImblearnGenerator
+from ..BaseGenerator import BaseClassFocusedGenerator
 
 
-class SMOTE(BaseImblearnGenerator):
+class SMOTE(BaseClassFocusedGenerator):
 
     def __init__(self, args):
         super().__init__(args)
 
-        if args.task not in ["classification", "regression"]:
+        if args.task not in ["classification", "regression", "unsupervision"]:
             raise ValueError(f"Task {args.task} is not supported by {args.model}")
 
-    def _fit(self, data_module):
-        """For SMOTE, we only need to save the data. And thus the saved model shoulf be None."""
-        # === Save the data ===
-        self.X_train = data_module.X_train
-        self.y_train = data_module.y_train
-
+    def _fit_model(self, data_df):
         # === Check if number of neighbors is valid ===
         if self.args.task == "classification":
             min_num_samples_per_class = min(self.args.train_class2samples_processed.values())
@@ -30,12 +25,12 @@ class SMOTE(BaseImblearnGenerator):
                     f"Number of neighbors ({self.k_neighbors}) is too high for some classes (min: {min_num_samples_per_class})"
                 )
 
-    def _generate(self, class2synthetic_samples):
+    def _generate_model(self, class2synthetic_samples):
         # === Prepare the data and generatation configurations ===
-        if self.args.task == "regression":
+        X_train = self.X_train
+        y_train = self.y_train
+        if self.args.task in ["regression", "unsupervision"]:
             # The samples are sorted by class id (0->real data, 1->dummy data)
-            X_train = np.concatenate([self.X_train, self.y_train.reshape(-1, 1)], axis=1)
-            y_train = np.zeros(self.X_train.shape[0], dtype=np.int64)
             X_dummy = np.random.rand(X_train.shape[0], X_train.shape[1])
             y_dummy = np.ones(self.X_train.shape[0], dtype=np.int64)
             X_train = np.concatenate([X_train, X_dummy], axis=0)
@@ -47,9 +42,6 @@ class SMOTE(BaseImblearnGenerator):
                 1: X_dummy.shape[0] + class2synthetic_samples["dummy"],
             }
         else:
-            X_train = self.X_train
-            y_train = self.y_train
-
             # Add number of real samples to the dict
             class2total_samples = {
                 class_id: num_synthetic_samples + self.args.train_class2samples_processed[class_id]
@@ -70,6 +62,9 @@ class SMOTE(BaseImblearnGenerator):
         if self.args.task == "regression":
             X_syn = X_syn_full[num_train_samples:, :-1]
             y_syn = X_syn_full[num_train_samples:, -1]
+        elif self.args.task == "unsupervision":
+            X_syn = X_syn_full[num_train_samples:]
+            y_syn = None
         else:
             X_syn = X_syn_full[num_train_samples:]
             y_syn = y_syn_full[num_train_samples:]
